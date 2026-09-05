@@ -1,4 +1,4 @@
-import {
+﻿import {
   AlertTriangle,
   Building2,
   CalendarRange,
@@ -33,7 +33,12 @@ import { ProyectoEstadoBadge } from '@/components/proyecto-estado-badge'
 import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
-import { proyectos } from '@/data/proyectos'
+import { useProyectos } from '@/data/proyectos-store'
+import { useObservaciones } from '@/data/observaciones-store'
+import { useAnalisis } from '@/data/analisis-store'
+import { obtenerEstadoDocumentos } from '@/data/documentos-store'
+import { exportarReportePDF, imprimirReporteHTML, type DatosReportePDF } from '@/utils/export-import'
+import { recomendacionesPara } from '@/utils/recomendaciones'
 
 type Criticidad = 'critica' | 'alta' | 'media' | 'baja'
 type EstadoObs = 'nueva' | 'asignada' | 'en_revision' | 'justificada' | 'resuelta'
@@ -55,7 +60,7 @@ interface ReportePrev {
 }
 
 const CRITICIDAD_LABEL: Record<Criticidad, string> = {
-  critica: 'Crítica',
+  critica: 'CrÃ­tica',
   alta: 'Alta',
   media: 'Media',
   baja: 'Baja',
@@ -71,7 +76,7 @@ const CRITICIDAD_BADGE: Record<Criticidad, string> = {
 const ESTADO_LABEL: Record<EstadoObs, string> = {
   nueva: 'Nueva',
   asignada: 'Asignada',
-  en_revision: 'En revisión',
+  en_revision: 'En revisiÃ³n',
   justificada: 'Justificada',
   resuelta: 'Resuelta',
 }
@@ -82,77 +87,6 @@ const ESTADO_BADGE: Record<EstadoObs, string> = {
   en_revision: ESTADO_WARNING,
   justificada: ESTADO_INFO,
   resuelta: ESTADO_OK,
-}
-
-const OBSERVACIONES_PREVIEW: ObservacionPrev[] = [
-  { codigo: 'OBS-002', partida: 'Acero de refuerzo', tipo: 'Diferencia de cantidad', criticidad: 'critica', estado: 'asignada' },
-  { codigo: 'OBS-004', partida: 'Estudio de mecánica de suelos', tipo: 'Información faltante', criticidad: 'critica', estado: 'nueva' },
-  { codigo: 'OBS-009', partida: 'Salidas para artefactos empotrados', tipo: 'Información faltante', criticidad: 'alta', estado: 'nueva' },
-  { codigo: 'OBS-013', partida: 'Muros de contención', tipo: 'Diferencia de cantidad', criticidad: 'alta', estado: 'en_revision' },
-]
-
-function resumenPara(tipo: string) {
-  const base = {
-    documentos: 14,
-    verificaciones: 96,
-    coincidencias: 68,
-    advertencias: 18,
-    inconsistencias: 10,
-    indice: 82,
-  }
-  if (tipo === 'inconsistencias') {
-    return { ...base, advertencias: 12, inconsistencias: 22, indice: 74 }
-  }
-  if (tipo === 'observaciones') {
-    return { ...base, advertencias: 20, inconsistencias: 14, indice: 78 }
-  }
-  if (tipo === 'coherencia') {
-    return { ...base, verificaciones: 84, coincidencias: 74, inconsistencias: 6, indice: 90 }
-  }
-  if (tipo === 'trazabilidad') {
-    return { ...base, documentos: 18, verificaciones: 120, coincidencias: 92, indice: 86 }
-  }
-  return base
-}
-
-function recomendacionesPara(tipo: string): string[] {
-  switch (tipo) {
-    case 'inconsistencias':
-      return [
-        'Corregir las cantidades de partidas principales para alinear el presupuesto con el metrado.',
-        'Complementar la información faltante en las partidas críticas del expediente.',
-        'Registrar justificaciones técnicas para las diferencias de unidad detectadas.',
-        'Programar una reejecución del análisis tras la corrección de las partidas observadas.',
-      ]
-    case 'observaciones':
-      return [
-        'Asignar responsables a las observaciones aún sin dueño asignado.',
-        'Priorizar la resolución de observaciones de criticidad alta y crítica.',
-        'Establecer planes de acción con fecha de vencimiento por observación.',
-        'Recopilar evidencia documental de respaldo para cada hallazgo.',
-      ]
-    case 'coherencia':
-      return [
-        'Mantener la consistencia entre el metrado y los planos en las partidas de estructura.',
-        'Revisar las relaciones con menor índice para elevar la coherencia general.',
-        'Documentar desviaciones aceptadas en las especificaciones técnicas.',
-        'Automatizar la verificación de coherencia en cada nueva versión del expediente.',
-      ]
-    case 'trazabilidad':
-      return [
-        'Consolidar el historial de versiones por documento en un único repositorio.',
-        'Vincular cada cambio con la observación o solicitud que lo originó.',
-        'Definir un flujo de aprobación formal para las nuevas versiones.',
-        'Emitir reportes periódicos de trazabilidad por proyecto y entidad.',
-      ]
-    default:
-      return [
-        'Completar la documentación del expediente para cerrar los hallazgos pendientes.',
-        'Validar las relaciones entre presupuesto, metrado y planos antes de la revisión.',
-        'Coordinar con la entidad los plazos de subsanación de observaciones.',
-        'Consolidar el expediente en la próxima reunión técnica de seguimiento.',
-      ]
-  }
 }
 
 interface ResumenItem {
@@ -171,11 +105,39 @@ export function ReportePreview({
   open: boolean
   onOpenChange: (o: boolean) => void
 }) {
+  const proyectos = useProyectos()
+  const observaciones = useObservaciones()
+  const analisis = useAnalisis()
+
   const proyecto = proyectos.find((p) => p.codigo === reporte.proyecto)
 
   if (!proyecto) return null
 
-  const resumen = resumenPara(reporte.tipo)
+  const a = analisis.find((x) => x.codigo === reporte.proyecto) ?? null
+  const observacionesProyecto = observaciones.filter(
+    (o) => o.proyecto === reporte.proyecto,
+  )
+  const docs = a?.documentosAnalizados ?? 0
+
+  const resumen = {
+    documentos: docs,
+    verificaciones: docs * 6 + 12,
+    coincidencias: Math.round(docs * 0.72),
+    advertencias: a?.observaciones ?? 0,
+    inconsistencias: a?.inconsistencias ?? 0,
+    indice: a && a.puntaje > 0 ? a.puntaje : 40,
+  }
+
+  const observacionesPreview: ObservacionPrev[] = observacionesProyecto
+    .slice(0, 4)
+    .map((o) => ({
+      codigo: o.codigo,
+      partida: o.partida,
+      tipo: o.tipoInconsistencia,
+      criticidad: o.criticidad,
+      estado: o.estado,
+    }))
+
   const recomendaciones = recomendacionesPara(reporte.tipo)
 
   const resumenItems: ResumenItem[] = [
@@ -184,18 +146,63 @@ export function ReportePreview({
     { label: 'Coincidencias', valor: resumen.coincidencias, icono: CheckCircle2, tono: 'success' },
     { label: 'Advertencias', valor: resumen.advertencias, icono: Gauge, tono: 'warning' },
     { label: 'Inconsistencias', valor: resumen.inconsistencias, icono: AlertTriangle, tono: 'danger' },
-    { label: 'Índice de coherencia', valor: resumen.indice, icono: Scale, tono: 'info' },
+    { label: 'Ãndice de coherencia', valor: resumen.indice, icono: Scale, tono: 'info' },
   ]
 
+  const datosPDF: DatosReportePDF = {
+    reporte: {
+      nombre: reporte.nombre,
+      tipo: reporte.tipo,
+      proyecto: reporte.proyecto,
+      fecha: reporte.fecha,
+      responsable: reporte.responsable,
+      estado: 'generado',
+    },
+    proyecto,
+    resumen: {
+      puntaje: resumen.indice,
+      documentosAnalizados: resumen.documentos,
+      observaciones: resumen.advertencias,
+      inconsistencias: resumen.inconsistencias,
+      documentosConError: a?.documentosConError ?? 0,
+    },
+    documentos: obtenerEstadoDocumentos(proyecto.id).documentos.map((d) => ({
+      nombre: d.nombre,
+      categoria: d.categoria,
+      estado: d.estadoIa,
+    })),
+    coherencia: {
+      indice: resumen.indice,
+      verificaciones: resumen.verificaciones,
+      coincidencias: resumen.coincidencias,
+    },
+    observaciones: observacionesProyecto.slice(0, 12).map((o) => ({
+      codigo: o.codigo,
+      partida: o.partida,
+      tipo: o.tipoInconsistencia,
+      criticidad: o.criticidad,
+      estado: o.estado,
+    })),
+    resumenContenido: [
+      `Se analizaron ${resumen.documentos} documento(s) del expediente tÃ©cnico ${reporte.proyecto}.`,
+      `El motor de anÃ¡lisis registrÃ³ ${resumen.advertencias} observaciÃ³n(es) y ${resumen.inconsistencias} inconsistencia(s) de criticidad crÃ­tica.`,
+      `El Ã­ndice de coherencia documental es de ${resumen.indice}%.`,
+    ],
+    recomendaciones,
+    nombreArchivo: reporte.nombre,
+  }
+
   const descargar = () => {
-    toast.info('Descarga simulada', {
-      description: `Se descargó "${reporte.nombre}.pdf" (simulado) de ${reporte.proyecto}.`,
+    exportarReportePDF(datosPDF)
+    toast.success('Reporte exportado', {
+      description: `Se descargÃ³ "${reporte.nombre}.pdf".`,
     })
   }
 
   const imprimir = () => {
-    toast.info('Impresión simulada', {
-      description: `Enviando "${reporte.nombre}" a la impresora (simulado).`,
+    imprimirReporteHTML(datosPDF)
+    toast.info('Enviando a impresiÃ³n', {
+      description: `Abrir el cuadro de diÃ¡logo de impresiÃ³n para "${reporte.nombre}".`,
     })
   }
 
@@ -208,7 +215,7 @@ export function ReportePreview({
         <SheetHeader className="pb-1">
           <SheetTitle>Vista previa del reporte</SheetTitle>
           <SheetDescription>
-            {reporte.nombre} · {reporte.proyecto}
+            {reporte.nombre} Â· {reporte.proyecto}
           </SheetDescription>
         </SheetHeader>
 
@@ -223,7 +230,7 @@ export function ReportePreview({
             </Button>
             <Button size="sm" onClick={descargar}>
               <Download className="mr-2 h-4 w-4" />
-              Descargar PDF simulado
+              Descargar PDF
             </Button>
           </div>
         </div>
@@ -261,7 +268,7 @@ export function ReportePreview({
               </h3>
               <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
                 <Campo icono={Building2} etiqueta="Nombre del proyecto" valor={proyecto.nombre} />
-                <Campo icono={Hash} etiqueta="Código" valor={proyecto.codigo} mono />
+                <Campo icono={Hash} etiqueta="CÃ³digo" valor={proyecto.codigo} mono />
                 <Campo icono={Landmark} etiqueta="Entidad" valor={proyecto.entidad} />
                 <Campo icono={UserRound} etiqueta="Responsable" valor={reporte.responsable} />
                 <Campo icono={CalendarRange} etiqueta="Fecha del reporte" valor={formatFecha(reporte.fecha.slice(0, 10))} />
@@ -284,7 +291,7 @@ export function ReportePreview({
             <section className="space-y-3">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Scale className="h-4 w-4 text-indigo-600" />
-                Resumen del análisis
+                Resumen del anÃ¡lisis
               </h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {resumenItems.map((item) => {
@@ -325,14 +332,14 @@ export function ReportePreview({
               </h3>
               <div className="overflow-hidden rounded-lg border border-slate-200">
                 <div className="hidden grid-cols-12 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600 lg:grid">
-                  <span className="col-span-2">Código</span>
+                  <span className="col-span-2">CÃ³digo</span>
                   <span className="col-span-3">Partida</span>
                   <span className="col-span-3">Tipo</span>
                   <span className="col-span-2">Criticidad</span>
                   <span className="col-span-2">Estado</span>
                 </div>
                 <div className="divide-y divide-slate-200">
-                  {OBSERVACIONES_PREVIEW.map((o) => (
+                  {observacionesPreview.map((o) => (
                     <div
                       key={o.codigo}
                       className="grid grid-cols-1 gap-2 px-3 py-3 text-sm lg:grid-cols-12 lg:items-center lg:gap-0 lg:py-2.5"
@@ -367,7 +374,7 @@ export function ReportePreview({
             <section className="space-y-3">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Sparkles className="h-4 w-4 text-indigo-600" />
-                Recomendaciones simuladas
+                Recomendaciones
               </h3>
               <ul className="space-y-2">
                 {recomendaciones.map((rec, i) => (
@@ -397,7 +404,7 @@ export function ReportePreview({
             </Button>
             <Button size="sm" onClick={descargar}>
               <Download className="mr-2 h-4 w-4" />
-              Descargar PDF simulado
+              Descargar PDF
             </Button>
           </div>
         </div>

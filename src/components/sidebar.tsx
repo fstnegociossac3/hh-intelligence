@@ -19,6 +19,7 @@ import { rutas } from '@/routes/config'
 import { iniciales } from '@/utils/formatters'
 import { useSession } from '@/hooks/useSession'
 import { LogOut, ChevronsLeft, ChevronsRight, X } from 'lucide-react'
+import { MODULOS_POR_ROL, rolComoClave } from '@/utils/permisos'
 
 interface SidebarBaseProps {
   colapsada?: boolean
@@ -32,6 +33,8 @@ function SidebarContenido({
   onCerrarMovil,
 }: SidebarBaseProps) {
   const { sesion, cerrarSesion } = useSession()
+
+  if (!sesion) return null
 
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
@@ -94,7 +97,11 @@ function SidebarContenido({
       )}
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
-        {rutas.map((ruta) => {
+        {rutas
+          .filter((ruta) =>
+            MODULOS_POR_ROL[rolComoClave(sesion.rol)].includes(ruta.modulo),
+          )
+          .map((ruta) => {
           const Icon = ruta.icon
           const item = (
             <NavLink

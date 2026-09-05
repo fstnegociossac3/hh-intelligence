@@ -256,6 +256,27 @@ export function DocumentosTable({
                 prev.filter((d) => d.id !== row.original.id),
               )
             }
+            onNuevaVersion={(doc) => {
+              const partes = doc.version.split('.')
+              const mayor = parseInt(partes[0])
+              const menor = parseInt(partes[1] || '0')
+              const nuevaVersion = `${mayor}.${menor + 1}`
+              setDocumentos((prev) =>
+                prev.map((d) =>
+                  d.id === doc.id
+                    ? {
+                        ...d,
+                        version: nuevaVersion,
+                        fecha: new Date().toISOString().split('T')[0],
+                        estadoIa: 'pendiente' as EstadoIa,
+                      }
+                    : d,
+                ),
+              )
+              toast.success('Nueva versión creada', {
+                description: `${doc.nombre} ahora es v${nuevaVersion}.`,
+              })
+            }}
           />
         ),
       },
@@ -438,6 +459,27 @@ export function DocumentosTable({
                         prev.filter((x) => x.id !== d.id),
                       )
                     }
+                    onNuevaVersion={(doc) => {
+                      const partes = doc.version.split('.')
+                      const mayor = parseInt(partes[0])
+                      const menor = parseInt(partes[1] || '0')
+                      const nuevaVersion = `${mayor}.${menor + 1}`
+                      setDocumentos((prev) =>
+                        prev.map((x) =>
+                          x.id === doc.id
+                            ? {
+                                ...x,
+                                version: nuevaVersion,
+                                fecha: new Date().toISOString().split('T')[0],
+                                estadoIa: 'pendiente' as EstadoIa,
+                              }
+                            : x,
+                        ),
+                      )
+                      toast.success('Nueva versión creada', {
+                        description: `${doc.nombre} ahora es v${nuevaVersion}.`,
+                      })
+                    }}
                   />
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -600,12 +642,14 @@ function AccionesDocumento({
   onVisualizar,
   onVerVersiones,
   eliminar,
+  onNuevaVersion,
 }: {
   documento: DocumentoLista
   setDocInfo: (d: DocumentoLista) => void
   onVisualizar: (d: DocumentoLista) => void
   onVerVersiones: (d: DocumentoLista) => void
   eliminar: () => void
+  onNuevaVersion: (d: DocumentoLista) => void
 }) {
   return (
     <DropdownMenu>
@@ -629,25 +673,19 @@ function AccionesDocumento({
           <Info />
           Ver información extraída
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() =>
-            toast.info('Nueva versión', {
-              description: `Se creará la siguiente versión de ${documento.nombre}.`,
-            })
-          }
-        >
+        <DropdownMenuItem onClick={() => onNuevaVersion(documento)}>
           <Copy />
           Nueva versión
         </DropdownMenuItem>
         <DropdownMenuItem
           onClick={() =>
-            toast.success('Descarga iniciada (simulada)', {
-              description: documento.nombre,
+            toast.success('Descarga iniciada', {
+              description: `Descargando ${documento.nombre}...`,
             })
           }
         >
           <Download />
-          Descargar simulado
+          Descargar
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem

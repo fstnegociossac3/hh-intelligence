@@ -1,6 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
 import {
   Activity,
@@ -35,8 +35,10 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import type { Proyecto } from '@/types'
+import type { Proyecto, ProyectoEstado } from '@/types'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO, PROGRESO_OK, PROGRESO_INFO } from '@/utils/estados-clases'
+import { usePermisos } from '@/utils/permisos'
+import { agregarNotificacion } from '@/data/notificaciones-store'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -106,11 +108,20 @@ import { MetradoVsPlano } from '@/components/metrado-vs-plano'
 import { PartidaVsCronograma } from '@/components/partida-vs-cronograma'
 import { PartidaVsEspecificacion } from '@/components/partida-vs-especificacion'
 import { ProcesamientoDocumental } from '@/components/procesamiento-documental'
+import { EjecucionAnalisis } from '@/components/ejecucion-analisis'
 import { PresupuestoVsMetrado } from '@/components/presupuesto-vs-metrado'
 import { RelacionesDocumentales } from '@/components/relaciones-documentales'
 import { ResultadosAnalisis } from '@/components/resultados-analisis'
 
-import { proyectos } from '@/data/proyectos'
+import {
+  useProyectos,
+  actualizarProyecto,
+  eliminarProyecto as eliminarProyectoStore,
+  duplicarProyecto as duplicarProyectoStore,
+} from '@/data/proyectos-store'
+import { obtenerObservaciones } from '@/data/observaciones-store'
+import { obtenerEstadoDocumentos, guardarEstadoDocumentos } from '@/data/documentos-store'
+import { exportarExpedientePDF } from '@/utils/export-import'
 import {
   DOCUMENTOS_MOCK,
   ESPECIALIDADES,
@@ -127,7 +138,19 @@ import type {
   RolEquipo,
 } from '@/data/proyecto-detalle'
 import { formatFecha, iniciales } from '@/utils/formatters'
-import { PagePlaceholder } from '@/components/page-placeholder'
+import { ObservacionesTab } from '@/components/observaciones-tab'
+import {
+  registrarEvento,
+  USUARIO_ACTUAL,
+} from '@/data/historial-store'
+
+const ESTADOS_DISPONIBLES: ProyectoEstado[] = [
+  'borrador',
+  'documentacion',
+  'en_analisis',
+  'observado',
+  'revisado',
+]
 
 function Etiqueta({ texto }: { texto: string }) {
   return (
@@ -137,19 +160,45 @@ function Etiqueta({ texto }: { texto: string }) {
   )
 }
 
+const TABS_DETALLE = ['resumen', 'documentos', 'analisis', 'observaciones', 'historial']
+
 export function ProyectoDetallePage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
-  const [tab, setTab] = useState('resumen')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const proyectos = useProyectos()
+  const { puedeEditar } = usePermisos()
+  const tabInicial = searchParams.get('tab')
+  const [tab, setTab] = useState(
+    tabInicial && TABS_DETALLE.includes(tabInicial) ? tabInicial : 'resumen',
+  )
+  const [analizando, setAnalizando] = useState(false)
   const [equipo, setEquipo] = useState<MiembroEquipo[]>(
     () => obtenerDetalleProyecto(id ?? '').equipo,
   )
   const [categorias, setCategorias] = useState<CategoriaDocumento[]>(
-    () => obtenerDetalleProyecto(id ?? '').categorias,
+    () =>
+      obtenerEstadoDocumentos(id ?? '')?.categorias ??
+      obtenerDetalleProyecto(id ?? '').categorias,
   )
   const [documentos, setDocumentos] = useState<DocumentoLista[]>(
-    DOCUMENTOS_MOCK,
+    () => obtenerEstadoDocumentos(id ?? '')?.documentos ?? DOCUMENTOS_MOCK,
   )
+
+  useEffect(() => {
+    if (!id) return
+    guardarEstadoDocumentos(id, documentos, categorias)
+  }, [id, documentos, categorias])
+
+  useEffect(() => {
+    const t = searchParams.get('tab')
+    if (t && TABS_DETALLE.includes(t)) setTab(t)
+  }, [searchParams])
+
+  const cambiarTab = (v: string) => {
+    setTab(v)
+    if (v !== searchParams.get('tab')) setSearchParams({ tab: v }, { replace: true })
+  }
 
   const proyecto = proyectos.find((p) => p.id === id)
 
@@ -223,8 +272,53 @@ export function ProyectoDetallePage() {
 
   const ejecutarAnalisis = () => {
     setTab('analisis')
-    toast.success('Iniciando análisis inteligente', {
-      description: `Procesamiento documental de ${proyecto.codigo}.`,
+    setAnalizando(true)
+  }
+
+  const eliminarProyecto = () => {
+    eliminarProyectoStore(proyecto.id)
+    toast.success('Proyecto eliminado', {
+      description: `${proyecto.codigo} fue eliminado del sistema.`,
+    })
+    navigate('/proyectos')
+  }
+
+  const duplicarProyecto = () => {
+    const nuevo = duplicarProyectoStore(proyecto)
+    registrarEvento({
+      proyectoId: nuevo.id,
+      proyectoCodigo: nuevo.codigo,
+      accion: 'proyecto_creado',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `Copia del expediente ${proyecto.codigo} creada como ${nuevo.codigo}`,
+    })
+    toast.success('Proyecto duplicado', {
+      description: `Se creó una copia de ${proyecto.codigo}.`,
+    })
+    navigate(`/proyectos/${nuevo.id}`)
+  }
+
+  const exportarExpediente = () => {
+    const observaciones = obtenerObservaciones().filter(
+      (o) => o.proyecto === proyecto.codigo,
+    )
+    exportarExpedientePDF({
+      proyecto,
+      detalle: {
+        actividad: detalle.actividad,
+        categorias,
+        equipo,
+        documentos: documentos.map((d) => ({
+          nombre: d.nombre,
+          categoria: d.categoria,
+          procesado: d.estadoIa === 'procesado',
+        })),
+        observaciones,
+      },
+      nombreArchivo: `${proyecto.codigo}.pdf`,
+    })
+    toast.success('Expediente exportado', {
+      description: `${proyecto.codigo} fue descargado en formato PDF.`,
     })
   }
 
@@ -301,34 +395,60 @@ export function ProyectoDetallePage() {
 
           <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
             <Dialog>
-              <DialogTrigger asChild>
-                <Button variant="outline">
-                  <Pencil />
-                  Editar
-                </Button>
-              </DialogTrigger>
+              {puedeEditar && (
+                <DialogTrigger asChild>
+                  <Button variant="outline">
+                    <Pencil />
+                    Editar
+                  </Button>
+                </DialogTrigger>
+              )}
               <DialogContent>
-                <EditarProyectoDialog proyecto={proyecto} />
+                <EditarProyectoDialog
+                  proyecto={proyecto}
+                  onGuardar={(datos) => {
+                    actualizarProyecto(proyecto.id, {
+                      ...datos,
+                      actualizadoEl: format(new Date(), 'yyyy-MM-dd'),
+                    })
+                    registrarEvento({
+                      proyectoId: proyecto.id,
+                      proyectoCodigo: proyecto.codigo,
+                      accion: 'proyecto_editado',
+                      usuario: USUARIO_ACTUAL,
+                      descripcion: `Datos del expediente ${proyecto.codigo} actualizados`,
+                    })
+                    toast.success('Proyecto actualizado', {
+                      description: `Los datos de ${proyecto.codigo} fueron actualizados.`,
+                    })
+                  }}
+                />
               </DialogContent>
             </Dialog>
             <Sheet>
-              <SheetTrigger asChild>
-                <Button variant="outline">
-                  <FileUp />
-                  Cargar documentos
-                </Button>
-              </SheetTrigger>
+              {puedeEditar && (
+                <SheetTrigger asChild>
+                  <Button variant="outline">
+                    <FileUp />
+                    Cargar documentos
+                  </Button>
+                </SheetTrigger>
+              )}
               <SheetContent className="w-full overflow-x-hidden overflow-y-auto bg-background text-foreground sm:max-w-2xl">
                 <CargarDocumentosDialog
                   setCategorias={setCategorias}
                   setDocumentos={setDocumentos}
+                  proyectoId={proyecto.id}
+                  proyectoCodigo={proyecto.codigo}
                 />
               </SheetContent>
             </Sheet>
-            <Button onClick={ejecutarAnalisis}>
-              <Play />
-              Ejecutar análisis
-            </Button>
+            {puedeEditar && (
+              <Button onClick={ejecutarAnalisis}>
+                <Play />
+                Ejecutar análisis
+              </Button>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost">
@@ -339,28 +459,32 @@ export function ProyectoDetallePage() {
               <DropdownMenuContent align="end" className="w-48">
                 <DropdownMenuLabel>Opciones</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => toast.info('Duplicar proyecto')}>
-                  <Copy />
-                  Duplicar
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => toast.info('Exportar expediente')}>
+                <DropdownMenuItem onClick={exportarExpediente}>
                   <Download />
                   Exportar
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => toast.error('Eliminar proyecto')}
-                >
-                  <Trash2 />
-                  Eliminar
-                </DropdownMenuItem>
+                {puedeEditar && (
+                  <>
+                    <DropdownMenuItem onClick={duplicarProyecto}>
+                      <Copy />
+                      Duplicar
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onClick={eliminarProyecto}
+                    >
+                      <Trash2 />
+                      Eliminar
+                    </DropdownMenuItem>
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
       </div>
 
-      <Tabs value={tab} onValueChange={setTab}>
+      <Tabs value={tab} onValueChange={cambiarTab}>
         <div className="overflow-x-auto">
           <TabsList className="sm:w-auto">
             <TabsTrigger value="resumen">
@@ -623,7 +747,26 @@ export function ProyectoDetallePage() {
         </TabsContent>
 
         <TabsContent value="analisis">
-          <ProcesamientoDocumental documentos={documentos.length} />
+          {analizando ? (
+            <EjecucionAnalisis
+              proyectos={[{ id: proyecto.id, codigo: proyecto.codigo, nombre: proyecto.nombre }]}
+              activo={analizando}
+              onFinalizado={(resumen) => {
+                toast.success('Análisis completado', {
+                  description: `${resumen.documentos} documentos procesados y ${resumen.observaciones} observaciones generadas.`,
+                })
+                agregarNotificacion({
+                  tipo: 'analisis',
+                  titulo: 'Análisis terminado',
+                  descripcion: `Análisis de ${proyecto.codigo} completado · ${resumen.documentos} documentos · ${resumen.observaciones} observaciones.`,
+                  ruta: `/proyectos/${proyecto.id}?tab=analisis`,
+                })
+                window.setTimeout(() => setAnalizando(false), 1800)
+              }}
+            />
+          ) : (
+            <ProcesamientoDocumental documentos={documentos.length} />
+          )}
           <div className="mt-8">
             <DatosNormalizados />
           </div>
@@ -651,13 +794,13 @@ export function ProyectoDetallePage() {
         </TabsContent>
 
         <TabsContent value="historial">
-          <HistorialProyecto />
+          <HistorialProyecto proyectoId={proyecto.id} />
         </TabsContent>
 
         <TabsContent value="observaciones">
-          <PagePlaceholder
-            titulo="Módulo Observaciones"
-            descripcion="La gestión de observaciones se implementará en fases posteriores."
+          <ObservacionesTab
+            proyectoId={proyecto.id}
+            proyectoCodigo={proyecto.codigo}
           />
         </TabsContent>
       </Tabs>
@@ -665,9 +808,17 @@ export function ProyectoDetallePage() {
   )
 }
 
-function EditarProyectoDialog({ proyecto }: { proyecto: Proyecto }) {
+function EditarProyectoDialog({
+  proyecto,
+  onGuardar,
+}: {
+  proyecto: Proyecto
+  onGuardar: (datos: { nombre: string; responsable: string; entidad: string; estado: ProyectoEstado }) => void
+}) {
   const [nombre, setNombre] = useState(proyecto.nombre)
   const [responsable, setResponsable] = useState(proyecto.responsable)
+  const [entidad, setEntidad] = useState(proyecto.entidad)
+  const [estado, setEstado] = useState<ProyectoEstado>(proyecto.estado)
 
   return (
     <>
@@ -694,13 +845,34 @@ function EditarProyectoDialog({ proyecto }: { proyecto: Proyecto }) {
             onChange={(e) => setResponsable(e.target.value)}
           />
         </div>
+        <div className="space-y-2">
+          <Label htmlFor="ed-entidad">Entidad pública</Label>
+          <Input
+            id="ed-entidad"
+            value={entidad}
+            onChange={(e) => setEntidad(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Estado</Label>
+          <Select value={estado} onValueChange={(v) => setEstado(v as ProyectoEstado)}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ESTADOS_DISPONIBLES.map((e) => (
+                <SelectItem key={e} value={e}>
+                  {e === 'borrador' ? 'Borrador' : e === 'documentacion' ? 'Documentación' : e === 'en_analisis' ? 'En análisis' : e === 'observado' ? 'Observado' : 'Revisado'}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <DialogFooter>
         <Button
           disabled={nombre.trim().length < 3}
-          onClick={() => {
-            toast.success('Cambios guardados (demo)')
-          }}
+          onClick={() => onGuardar({ nombre, responsable, entidad, estado })}
         >
           Guardar cambios
         </Button>

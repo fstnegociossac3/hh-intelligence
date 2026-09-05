@@ -1,23 +1,23 @@
-import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
-interface SesionInfo {
-  nombre: string
-  email: string
-  rol: string
-}
-
-const SESION_MOCK: SesionInfo = {
-  nombre: 'Carlos Mendoza',
-  email: 'carlos.mendoza@hhi.pe',
-  rol: 'Administrador',
-}
+import {
+  cerrarSesionPersistida,
+  marcarCierreManual,
+  useSesionGuardada,
+} from '@/data/sesion-store'
 
 export function useSession() {
-  const [sesion] = useState<SesionInfo>(SESION_MOCK)
+  const guardada = useSesionGuardada()
+  const navigate = useNavigate()
 
   const cerrarSesion = () => {
-    window.location.href = '/login'
+    marcarCierreManual()
+    cerrarSesionPersistida()
+    navigate('/login', { replace: true })
   }
 
-  return { sesion, cerrarSesion }
+  return {
+    sesion: guardada?.usuario ?? null,
+    cerrarSesion,
+  }
 }

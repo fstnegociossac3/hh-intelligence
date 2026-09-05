@@ -1,15 +1,24 @@
+import { useState } from 'react'
 import {
+  AlertTriangle,
   Bell,
+  CheckCheck,
   ChevronRight,
+  CircleCheck,
+  FileBarChart,
+  FileCheck2,
   HelpCircle,
   Home,
   Menu,
+  ScanSearch,
   Search,
+  User,
+  X,
 } from 'lucide-react'
-import { Link, useLocation } from 'react-router-dom'
+import type { LucideIcon } from 'lucide-react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
@@ -20,20 +29,49 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { iniciales } from '@/utils/formatters'
+import { BuscadorGlobal } from '@/components/buscador-global'
+import { iniciales, formatFecha } from '@/utils/formatters'
 import { useSession } from '@/hooks/useSession'
+import {
+  marcarNotificacionLeida,
+  marcarTodasLeidas,
+  useNotificaciones,
+  type TipoNotificacion,
+} from '@/data/notificaciones-store'
 
 interface HeaderProps {
   titulo: { principal: string; subtitulo: string }
   onAbrirMenuMovil: () => void
 }
 
+const ICONO_NOTIFICACION: Record<TipoNotificacion, LucideIcon> = {
+  documento: FileCheck2,
+  analisis: ScanSearch,
+  observacion: AlertTriangle,
+  observacion_resuelta: CircleCheck,
+  reporte: FileBarChart,
+}
+
+const COLOR_ICONO_NOTIFICACION: Record<TipoNotificacion, string> = {
+  documento: 'text-primary',
+  analisis: 'text-primary',
+  observacion: 'text-destructive',
+  observacion_resuelta: 'text-emerald-500',
+  reporte: 'text-primary',
+}
+
 export function Header({ titulo, onAbrirMenuMovil }: HeaderProps) {
   const ubicacion = useLocation()
+  const navigate = useNavigate()
   const { sesion, cerrarSesion } = useSession()
+  const notificaciones = useNotificaciones()
+  const [busquedaMovilAbierta, setBusquedaMovilAbierta] = useState(false)
+
+  if (!sesion) return null
 
   const ruta = titulo.principal
   const esDashboard = ubicacion.pathname === '/dashboard'
+  const noLeidas = notificaciones.filter((n) => !n.leida).length
 
   return (
     <header className="flex h-16 shrink-0 items-center gap-3 border-b bg-card px-4 sm:px-6">
@@ -75,14 +113,8 @@ export function Header({ titulo, onAbrirMenuMovil }: HeaderProps) {
       </nav>
 
       <div className="ml-auto flex items-center gap-2 sm:gap-3">
-        <div className="relative hidden md:block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Buscar..."
-            className="w-44 pl-9 lg:w-64"
-            aria-label="Buscar"
-          />
+        <div className="relative hidden w-52 lg:w-80 md:block">
+          <BuscadorGlobal />
         </div>
 
         <Button
@@ -90,6 +122,7 @@ export function Header({ titulo, onAbrirMenuMovil }: HeaderProps) {
           size="icon"
           className="md:hidden"
           aria-label="Buscar"
+          onClick={() => setBusquedaMovilAbierta(true)}
         >
           <Search className="h-5 w-5" />
         </Button>
@@ -103,31 +136,70 @@ export function Header({ titulo, onAbrirMenuMovil }: HeaderProps) {
               aria-label="Notificaciones"
             >
               <Bell className="h-5 w-5" />
-              <span className="absolute right-2 top-2 flex h-2 w-2">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-destructive opacity-75" />
-                <span className="relative inline-flex h-2 w-2 rounded-full bg-destructive" />
-              </span>
+              {noLeidas > 0 && (
+                <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-white">
+                  {noLeidas > 9 ? '9+' : noLeidas}
+                </span>
+              )}
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuLabel>Notificaciones</DropdownMenuLabel>
+          <DropdownMenuContent align="end" className="w-72 sm:w-80">
+            <div className="flex items-center justify-between pr-2">
+              <DropdownMenuLabel>Notificaciones</DropdownMenuLabel>
+              {noLeidas > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs text-primary"
+                  onClick={marcarTodasLeidas}
+                >
+                  <CheckCheck className="h-3.5 w-3.5" />
+                  Marcar todas
+                </Button>
+              )}
+            </div>
             <DropdownMenuSeparator />
-            <DropdownMenuItem className="items-start">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">Revisión completada</span>
-                <span className="text-xs text-muted-foreground">
-                  El análisis EXP-2025-0001 finalizó correctamente.
-                </span>
+            {notificaciones.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted-foreground">
+                No hay notificaciones.
+              </p>
+            ) : (
+              <div className="max-h-80 overflow-auto">
+                {notificaciones.slice(0, 10).map((n) => {
+                  const Icono = ICONO_NOTIFICACION[n.tipo]
+                  return (
+                    <DropdownMenuItem
+                      key={n.id}
+                      className="items-start gap-2.5 py-2.5"
+                      onClick={() => {
+                        marcarNotificacionLeida(n.id)
+                        navigate(n.ruta)
+                      }}
+                    >
+                      <span
+                        className={`mt-0.5 shrink-0 ${COLOR_ICONO_NOTIFICACION[n.tipo]}`}
+                      >
+                        <Icono className="h-4 w-4" />
+                      </span>
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span className="flex items-center gap-2 text-sm font-medium">
+                          {n.titulo}
+                          {!n.leida && (
+                            <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary" />
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {n.descripcion}
+                        </span>
+                        <span className="text-[11px] text-muted-foreground/70">
+                          {formatFecha(n.fecha.slice(0, 10))}
+                        </span>
+                      </span>
+                    </DropdownMenuItem>
+                  )
+                })}
               </div>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="items-start">
-              <div className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium">Nueva observación</span>
-                <span className="text-xs text-muted-foreground">
-                  Se detectaron 3 hallazgos en el expediente EXP-2025-0003.
-                </span>
-              </div>
-            </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -163,11 +235,17 @@ export function Header({ titulo, onAbrirMenuMovil }: HeaderProps) {
                 <span className="text-xs font-normal text-muted-foreground">
                   {sesion.email}
                 </span>
+                <span className="text-xs font-medium text-primary">
+                  {sesion.rol}
+                </span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>Perfil</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => navigate('/perfil')}>
+                <User className="mr-2 h-4 w-4" />
+                Perfil
+              </DropdownMenuItem>
               <DropdownMenuItem>Ajustes</DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
@@ -177,6 +255,28 @@ export function Header({ titulo, onAbrirMenuMovil }: HeaderProps) {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      {busquedaMovilAbierta && (
+        <div className="fixed inset-x-0 top-0 z-[60] border-b bg-card p-3 shadow-sm md:hidden">
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <BuscadorGlobal
+                autoFocus
+                onResultado={() => setBusquedaMovilAbierta(false)}
+              />
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0"
+              aria-label="Cerrar búsqueda"
+              onClick={() => setBusquedaMovilAbierta(false)}
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+      )}
     </header>
   )
 }

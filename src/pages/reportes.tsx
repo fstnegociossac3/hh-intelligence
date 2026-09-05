@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   type ColumnDef,
   type Header,
@@ -65,11 +66,27 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/motion'
 import { EmptyState } from '@/components/empty-state'
+import { usePermisos } from '@/utils/permisos'
 import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
-import { proyectos } from '@/data/proyectos'
 import { ReportePreview } from '@/components/reporte-preview'
+import type { Proyecto } from '@/types'
+import { useProyectos } from '@/data/proyectos-store'
+import { useAnalisis, type RegistroAnalisis } from '@/data/analisis-store'
+import { useObservaciones } from '@/data/observaciones-store'
+import { agregarNotificacion } from '@/data/notificaciones-store'
+import { obtenerEstadoDocumentos } from '@/data/documentos-store'
+import {
+  exportarReportePDF,
+  imprimirReporteHTML,
+  type DatosReportePDF,
+} from '@/utils/export-import'
+import { recomendacionesPara } from '@/utils/recomendaciones'
+import {
+  registrarEvento,
+  USUARIO_ACTUAL,
+} from '@/data/historial-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
 
@@ -92,7 +109,7 @@ interface Reporte {
   estado: EstadoReporte
 }
 
-const PROYECTOS = proyectos.map((p) => p.codigo)
+const PROYECTOS_KEY = 'hh-intelligence:reportes-generados'
 
 const TIPO_LABEL: Record<TipoReporte, string> = {
   general: 'Reporte general del expediente',
@@ -128,23 +145,66 @@ const ESTADO_BADGE: Record<EstadoReporte, string> = {
   generado: ESTADO_OK,
 }
 
-const MOCK_INICIAL: Reporte[] = [
-  { id: 'r-01', nombre: 'Informe ejecutivo general', proyecto: 'EXP-2025-0147', tipo: 'general', fecha: '2026-08-25T10:15:00', responsable: 'Andrea Quispe', estado: 'generado' },
-  { id: 'r-02', nombre: 'Matriz de inconsistencias detectadas', proyecto: 'EXP-2025-0163', tipo: 'inconsistencias', fecha: '2026-08-27T09:40:00', responsable: 'Lucía Fernández', estado: 'generado' },
-  { id: 'r-03', nombre: 'Consolidado de observaciones', proyecto: 'EXP-2025-0158', tipo: 'observaciones', fecha: '2026-08-28T14:05:00', responsable: 'Jorge Paredes', estado: 'pendiente' },
-  { id: 'r-04', nombre: 'Reporte de coherencia documental', proyecto: 'EXP-2025-0147', tipo: 'coherencia', fecha: '2026-08-29T11:30:00', responsable: 'Andrea Quispe', estado: 'generado' },
-  { id: 'r-05', nombre: 'Trazabilidad de cambios por versión', proyecto: 'EXP-2025-0171', tipo: 'trazabilidad', fecha: '2026-08-29T16:00:00', responsable: 'Carlos Mendoza', estado: 'generado' },
-  { id: 'r-06', nombre: 'Resumen general del expediente', proyecto: 'EXP-2025-0171', tipo: 'general', fecha: '2026-08-30T08:20:00', responsable: 'Carlos Mendoza', estado: 'pendiente' },
-  { id: 'r-07', nombre: 'Detalle de inconsistencias críticas', proyecto: 'EXP-2025-0163', tipo: 'inconsistencias', fecha: '2026-08-30T10:45:00', responsable: 'Ana Quispe', estado: 'generado' },
-  { id: 'r-08', nombre: 'Seguimiento de observaciones abiertas', proyecto: 'EXP-2025-0158', tipo: 'observaciones', fecha: '2026-08-28T12:10:00', responsable: 'Jorge Paredes', estado: 'generado' },
-  { id: 'r-09', nombre: 'Índice de coherencia por relación', proyecto: 'EXP-2025-0147', tipo: 'coherencia', fecha: '2026-08-27T15:25:00', responsable: 'Lucía Fernández', estado: 'pendiente' },
-  { id: 'r-10', nombre: 'Historial de versiones y auditoría', proyecto: 'EXP-2025-0171', tipo: 'trazabilidad', fecha: '2026-08-26T09:15:00', responsable: 'Carlos Mendoza', estado: 'generado' },
-  { id: 'r-11', nombre: 'Informe general de cumplimiento normativo', proyecto: 'EXP-2025-0163', tipo: 'general', fecha: '2026-08-31T09:05:00', responsable: 'Ana Quispe', estado: 'generado' },
-  { id: 'r-12', nombre: 'Matriz de inconsistencias por regla', proyecto: 'EXP-2025-0147', tipo: 'inconsistencias', fecha: '2026-08-25T17:50:00', responsable: 'Andrea Quispe', estado: 'generado' },
-  { id: 'r-13', nombre: 'Reporte de coherencia del metrado', proyecto: 'EXP-2025-0158', tipo: 'coherencia', fecha: '2026-08-24T11:40:00', responsable: 'Jorge Paredes', estado: 'generado' },
-  { id: 'r-14', nombre: 'Auditoría de trazabilidad documental', proyecto: 'EXP-2025-0163', tipo: 'trazabilidad', fecha: '2026-08-29T13:30:00', responsable: 'Lucía Fernández', estado: 'pendiente' },
-  { id: 'r-15', nombre: 'Resumen de observaciones por partida', proyecto: 'EXP-2025-0171', tipo: 'observaciones', fecha: '2026-08-23T10:20:00', responsable: 'Ana Quispe', estado: 'generado' },
-]
+const TIPO_NOMBRE: Record<TipoReporte, (codigo: string) => string> = {
+  general: (c) => `Informe ejecutivo del expediente ${c}`,
+  inconsistencias: (c) => `Matriz de inconsistencias de ${c}`,
+  observaciones: (c) => `Consolidado de observaciones de ${c}`,
+  coherencia: (c) => `Reporte de coherencia documental de ${c}`,
+  trazabilidad: (c) => `Trazabilidad de versiones de ${c}`,
+}
+
+function generarReportes(
+  proyectos: Proyecto[],
+  analisis: RegistroAnalisis[],
+): Reporte[] {
+  const porCodigo = new Map(analisis.map((a) => [a.codigo, a]))
+  const lista: Reporte[] = []
+
+  for (const p of proyectos) {
+    const a = porCodigo.get(p.codigo)
+    const tipos: TipoReporte[] = ['general', 'coherencia']
+    if (a && a.observaciones > 0) tipos.push('observaciones')
+    if (a && a.inconsistencias > 0) tipos.push('inconsistencias')
+    if (a && (a.documentosConError > 0 || a.documentosAnalizados >= 8)) {
+      tipos.push('trazabilidad')
+    }
+
+    for (const tipo of tipos) {
+      const estado: EstadoReporte =
+        a && a.resultado !== 'pendiente' ? 'generado' : 'pendiente'
+      lista.push({
+        id: `${p.id}-${tipo}`,
+        nombre: TIPO_NOMBRE[tipo](p.codigo),
+        proyecto: p.codigo,
+        tipo,
+        fecha: p.actualizadoEl,
+        responsable: p.responsable,
+        estado,
+      })
+    }
+  }
+
+  return lista
+}
+
+function leerGenerados(): Set<string> {
+  try {
+    const crudo = localStorage.getItem(PROYECTOS_KEY)
+    if (!crudo) return new Set()
+    const arr = JSON.parse(crudo) as string[]
+    return new Set(arr)
+  } catch {
+    return new Set()
+  }
+}
+
+function persistirGenerados(set: Set<string>) {
+  try {
+    localStorage.setItem(PROYECTOS_KEY, JSON.stringify([...set]))
+  } catch {
+    // almacenamiento no disponible
+  }
+}
 
 function CeldaSortable({ header }: { header: Header<Reporte, unknown> }) {
   if (header.isPlaceholder) return null
@@ -174,28 +234,103 @@ function CeldaSortable({ header }: { header: Header<Reporte, unknown> }) {
 }
 
 export function ReportesPage() {
+  const { puedeEditar } = usePermisos()
   const [sorting, setSorting] = useState<SortingState>([])
   const [busqueda, setBusqueda] = useState('')
   const [filtroProyecto, setFiltroProyecto] = useState('todos')
   const [filtroTipo, setFiltroTipo] = useState('todos')
   const [filtroFecha, setFiltroFecha] = useState('todas')
   const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
-  const [reportes, setReportes] = useState<Reporte[]>(MOCK_INICIAL)
-  const [seleccionId, setSeleccionId] = useState<string | null>(null)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [seleccionId, setSeleccionId] = useState<string | null>(() =>
+    searchParams.get('reporte'),
+  )
+  const [generados, setGenerados] = useState<Set<string>>(() => leerGenerados())
+
+  const proyectos = useProyectos()
+  const analisis = useAnalisis()
+  const observaciones = useObservaciones()
+
+  const construirDatos = (r: Reporte): DatosReportePDF => {
+    const p = proyectos.find((x) => x.codigo === r.proyecto) ?? null
+    const a = analisis.find((x) => x.codigo === r.proyecto) ?? null
+    const docs = p ? obtenerEstadoDocumentos(p.id).documentos : []
+    const obs = observaciones.filter((o) => o.proyecto === r.proyecto)
+    const puntaje = a && a.puntaje > 0 ? a.puntaje : 0
+    return {
+      reporte: {
+        nombre: r.nombre,
+        tipo: r.tipo,
+        proyecto: r.proyecto,
+        fecha: r.fecha,
+        responsable: r.responsable,
+        estado: r.estado,
+      },
+      proyecto: p,
+      resumen: a
+        ? {
+            puntaje: a.puntaje,
+            documentosAnalizados: a.documentosAnalizados,
+            observaciones: a.observaciones,
+            inconsistencias: a.inconsistencias,
+            documentosConError: a.documentosConError,
+          }
+        : null,
+      documentos: docs.map((d) => ({
+        nombre: d.nombre,
+        categoria: d.categoria,
+        estado: d.estadoIa,
+      })),
+      coherencia: {
+        indice: puntaje,
+        verificaciones: docs.length * 6 + 12,
+        coincidencias:
+          docs.length > 0 ? Math.round(docs.length * (puntaje / 100)) : 0,
+      },
+      observaciones: obs.slice(0, 12).map((o) => ({
+        codigo: o.codigo,
+        partida: o.partida,
+        tipo: o.tipoInconsistencia,
+        criticidad: o.criticidad,
+        estado: o.estado,
+      })),
+      resumenContenido: [
+        `Se analizaron ${docs.length} documento(s) del expediente técnico ${r.proyecto}.`,
+        a
+          ? `El motor de análisis registró ${a.observaciones} observación(es) y ${a.inconsistencias} inconsistencia(s) de criticidad crítica.`
+          : 'No se ha ejecutado aún el análisis inteligente del expediente.',
+        `El índice de coherencia documental es de ${puntaje > 0 ? `${puntaje}%` : '—'}.`,
+      ],
+      recomendaciones: recomendacionesPara(r.tipo),
+      nombreArchivo: r.nombre,
+    }
+  }
+
+  const opcionesProyecto = useMemo(
+    () => proyectos.map((p) => p.codigo),
+    [proyectos],
+  )
+
+  const reportes = useMemo(() => {
+    const base = generarReportes(proyectos, analisis)
+    if (generados.size === 0) return base
+    return base.map(
+      (r): Reporte =>
+        generados.has(r.id) ? { ...r, estado: 'generado' } : r,
+    )
+  }, [proyectos, analisis, generados])
 
   const datosFiltrados = useMemo(() => {
+    const hoy = new Date()
+    const inicioSemana = new Date(hoy.getTime() - 7 * 24 * 60 * 60 * 1000)
     return reportes.filter((r) => {
       if (filtroProyecto !== 'todos' && r.proyecto !== filtroProyecto) return false
       if (filtroTipo !== 'todos' && r.tipo !== filtroTipo) return false
       if (filtroFecha !== 'todas') {
-        const dia = r.fecha.slice(0, 10)
-        if (filtroFecha === 'hoy' && dia !== '2026-08-31') return false
-        if (filtroFecha === 'semana') {
-          const fecha = new Date(dia)
-          const limite = new Date('2026-08-24')
-          if (fecha < limite) return false
-        }
-        if (filtroFecha === 'mes' && !dia.startsWith('2026-08')) return false
+        const fecha = new Date(r.fecha.slice(0, 10))
+        if (filtroFecha === 'hoy' && fecha.toDateString() !== hoy.toDateString()) return false
+        if (filtroFecha === 'semana' && fecha < inicioSemana) return false
+        if (filtroFecha === 'mes' && fecha.getTime() < hoy.getTime() - 30 * 24 * 60 * 60 * 1000) return false
       }
       return true
     })
@@ -279,18 +414,20 @@ export function ReportesPage() {
                   <Eye className="mr-2 h-4 w-4" />
                   Ver
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => generarReporte(r.id)}>
-                  <Play className="mr-2 h-4 w-4" />
-                  Generar
-                </DropdownMenuItem>
+                {puedeEditar && (
+                  <DropdownMenuItem onClick={() => generarReporte(r.id)}>
+                    <Play className="mr-2 h-4 w-4" />
+                    Generar
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => descargarReporte(r)}>
                   <Download className="mr-2 h-4 w-4" />
-                  Descargar simulado
+                  Descargar PDF
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => imprimirReporte(r)}>
                   <Printer className="mr-2 h-4 w-4" />
-                  Imprimir simulado
+                  Imprimir
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -298,7 +435,7 @@ export function ReportesPage() {
         },
       },
     ],
-    [],
+    [puedeEditar],
   )
 
   const table = useReactTable({
@@ -348,6 +485,11 @@ export function ReportesPage() {
     { titulo: 'Tipos disponibles', valor: kpis.tipos, detalle: 'Token de reporte', icono: BarChart3, tono: 'info' },
   ]
 
+  useEffect(() => {
+    const r = searchParams.get('reporte')
+    if (r) setSeleccionId(r)
+  }, [searchParams])
+
   const resultado = reportes.find((r) => r.id === seleccionId) ?? null
 
   const verReporte = (r: Reporte) => {
@@ -355,24 +497,47 @@ export function ReportesPage() {
   }
 
   const generarReporte = (id: string) => {
-    setReportes((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, estado: 'generado' } : r)),
-    )
+    setGenerados((prev) => {
+      const siguiente = new Set(prev)
+      siguiente.add(id)
+      persistirGenerados(siguiente)
+      return siguiente
+    })
+    const reporte = reportes.find((r) => r.id === id)
+    if (!reporte) return
+    try {
+      exportarReportePDF(construirDatos(reporte))
+    } catch {
+      toast.error('No se pudo generar el archivo PDF', {
+        description: 'El reporte fue registrado correctamente.',
+      })
+    }
+    registrarEvento({
+      proyectoCodigo: reporte.proyecto,
+      accion: 'reporte_generado',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `${reporte.nombre} generado`,
+    })
+    agregarNotificacion({
+      tipo: 'reporte',
+      titulo: 'Reporte generado',
+      descripcion: `${reporte.nombre} del expediente ${reporte.proyecto} fue generado y descargado.`,
+      ruta: `/reportes?reporte=${reporte.id}`,
+    })
     toast.success('Reporte generado', {
-      description: 'El reporte se generó correctamente y quedó listo para descargar.',
+      description: 'El reporte se generó correctamente y se descargó el PDF.',
     })
   }
 
   const descargarReporte = (r: Reporte) => {
-    toast.info('Descarga simulada', {
-      description: `Se descargó "${r.nombre}.pdf" (simulado) de ${r.proyecto}.`,
+    exportarReportePDF(construirDatos(r))
+    toast.success('Reporte exportado', {
+      description: `Se descargó "${r.nombre}.pdf".`,
     })
   }
 
   const imprimirReporte = (r: Reporte) => {
-    toast.info('Impresión simulada', {
-      description: `Enviando "${r.nombre}" a la impresora (simulado).`,
-    })
+    imprimirReporteHTML(construirDatos(r))
   }
 
   return (
@@ -419,7 +584,7 @@ export function ReportesPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos los proyectos</SelectItem>
-                {PROYECTOS.map((p) => (
+                {opcionesProyecto.map((p) => (
                   <SelectItem key={p} value={p}>{p}</SelectItem>
                 ))}
               </SelectContent>
@@ -537,9 +702,11 @@ export function ReportesPage() {
                         <Button variant="ghost" size="icon" aria-label="Ver" onClick={() => verReporte(r)}>
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button variant="ghost" size="icon" aria-label="Generar" onClick={() => generarReporte(r.id)}>
-                          <Play className="h-4 w-4" />
-                        </Button>
+                        {puedeEditar && (
+                          <Button variant="ghost" size="icon" aria-label="Generar" onClick={() => generarReporte(r.id)}>
+                            <Play className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Button variant="ghost" size="icon" aria-label="Descargar" onClick={() => descargarReporte(r)}>
                           <Download className="h-4 w-4" />
                         </Button>
@@ -600,7 +767,14 @@ export function ReportesPage() {
         <ReportePreview
           key={seleccionId ?? 'cerrado'}
           open={!!resultado}
-          onOpenChange={(o) => !o && setSeleccionId(null)}
+          onOpenChange={(o) => {
+            if (!o) {
+              setSeleccionId(null)
+              if (searchParams.get('reporte')) {
+                setSearchParams({}, { replace: true })
+              }
+            }
+          }}
           reporte={resultado}
         />
       )}

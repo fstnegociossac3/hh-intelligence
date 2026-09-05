@@ -6,6 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
   AlertTriangle,
+  ArrowRight,
+  Check,
   CheckCircle2,
   File,
   FileUp,
@@ -18,12 +20,13 @@ import {
 import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
-import { ESTADO_OK, ESTADO_INFO, ESTADO_NEUTRO, ESTADO_CRITICO } from '@/utils/estados-clases'
+import { ESTADO_OK, ESTADO_INFO, ESTADO_NEUTRO, ESTADO_CRITICO, ESTADO_WARNING } from '@/utils/estados-clases'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Progress } from '@/components/ui/progress'
 import { Separator } from '@/components/ui/separator'
+import { cn } from '@/utils/cn'
 import {
   SheetClose,
   SheetDescription,
@@ -40,8 +43,13 @@ import {
 } from '@/components/ui/select'
 import { DOC_CATEGORIAS, ESPECIALIDADES } from '@/data/proyecto-detalle'
 import type { CategoriaDocumento, DocumentoLista } from '@/data/proyecto-detalle'
+import {
+  registrarEvento,
+  USUARIO_ACTUAL,
+  USUARIO_IA,
+} from '@/data/historial-store'
 
-type EstadoCarga = 'pendiente' | 'cargando' | 'cargado' | 'error'
+type EstadoCarga = 'pendiente' | 'subiendo' | 'procesando' | 'procesado' | 'error'
 
 interface FilaCarga {
   id: string
@@ -99,15 +107,17 @@ function tipoDe(nombre: string) {
 
 const ESTADO_LABEL: Record<EstadoCarga, string> = {
   pendiente: 'Pendiente',
-  cargando: 'Cargando',
-  cargado: 'Cargado',
+  subiendo: 'Subiendo',
+  procesando: 'Procesando IA',
+  procesado: 'Procesado',
   error: 'Error',
 }
 
 const ESTADO_CLASE: Record<EstadoCarga, string> = {
   pendiente: ESTADO_NEUTRO,
-  cargando: ESTADO_INFO,
-  cargado: ESTADO_OK,
+  subiendo: ESTADO_INFO,
+  procesando: ESTADO_WARNING,
+  procesado: ESTADO_OK,
   error: ESTADO_CRITICO,
 }
 
@@ -116,8 +126,9 @@ const fechaHoy = () => new Date().toISOString().slice(0, 10)
 function EstadoCargaBadge({ estado }: { estado: EstadoCarga }) {
   const icono: Record<EstadoCarga, ReactNode> = {
     pendiente: <File className="h-3.5 w-3.5" />,
-    cargando: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
-    cargado: <CheckCircle2 className="h-3.5 w-3.5" />,
+    subiendo: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
+    procesando: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
+    procesado: <CheckCircle2 className="h-3.5 w-3.5" />,
     error: <AlertTriangle className="h-3.5 w-3.5" />,
   }
   return (
@@ -128,12 +139,62 @@ function EstadoCargaBadge({ estado }: { estado: EstadoCarga }) {
   )
 }
 
+function FasesCarga({ estado }: { estado: EstadoCarga }) {
+  const subiendoHecho = estado === 'procesando' || estado === 'procesado'
+  const subiendoActivo = estado === 'subiendo'
+  const iaHecho = estado === 'procesado'
+  const iaActivo = estado === 'procesando'
+  return (
+    <div className="mt-3 flex items-center gap-2 text-[11px]">
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium',
+          subiendoHecho
+            ? 'bg-success/10 text-success'
+            : subiendoActivo
+              ? 'bg-info/10 text-info'
+              : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {subiendoHecho ? (
+          <Check className="h-3 w-3" />
+        ) : (
+          <Loader2 className={cn('h-3 w-3', subiendoActivo && 'animate-spin')} />
+        )}
+        Subiendo
+      </span>
+      <ArrowRight className="h-3 w-3 text-muted-foreground" />
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium',
+          iaHecho
+            ? 'bg-success/10 text-success'
+            : iaActivo
+              ? 'bg-info/10 text-info'
+              : 'bg-muted text-muted-foreground',
+        )}
+      >
+        {iaHecho ? (
+          <Check className="h-3 w-3" />
+        ) : (
+          <Loader2 className={cn('h-3 w-3', iaActivo && 'animate-spin')} />
+        )}
+        Procesando IA
+      </span>
+    </div>
+  )
+}
+
 export function CargarDocumentosDialog({
   setCategorias,
   setDocumentos,
+  proyectoId,
+  proyectoCodigo,
 }: {
   setCategorias: Dispatch<SetStateAction<CategoriaDocumento[]>>
   setDocumentos: Dispatch<SetStateAction<DocumentoLista[]>>
+  proyectoId: string
+  proyectoCodigo: string
 }) {
   const [progresos, setProgresos] = useState<
     Record<string, { estado: EstadoCarga; progreso: number }>
@@ -202,11 +263,11 @@ export function CargarDocumentosDialog({
   const simular = (id: string) => {
     const fila = getValues('archivos').find((f) => f.id === id)
     if (!fila) return
-    setProgresos((p) => ({ ...p, [id]: { estado: 'cargando', progreso: 0 } }))
+    setProgresos((p) => ({ ...p, [id]: { estado: 'subiendo', progreso: 0 } }))
     let pct = 0
-    const falla = Math.random() < 0.15
+    const falla = Math.random() < 0.12
     const timer = window.setInterval(() => {
-      pct += Math.floor(Math.random() * 30) + 8
+      pct += Math.floor(Math.random() * 32) + 9
       if (pct >= 100) {
         clearInterval(timer)
         delete timers.current[id]
@@ -216,60 +277,112 @@ export function CargarDocumentosDialog({
             description: fila.file.name,
           })
         } else {
-          setProgresos((p) => ({ ...p, [id]: { estado: 'cargado', progreso: 100 } }))
-          toast.success('Documento cargado', {
-            description: fila.file.name,
-          })
-          setDocumentos((prev) => [
-            ...prev,
-            {
-              id,
-              nombre: fila.file.name,
-              categoria: fila.categoria,
-              especialidad: fila.especialidad,
-              version: fila.version,
-              fecha: fechaHoy(),
-              tamaño: fila.file.size,
-              estadoIa: 'pendiente',
-              responsable: 'Sin asignar',
-            },
-          ])
-          setCategorias((prev) => {
-            const cat = fila.categoria
-            const existe = prev.some((c) => c.categoria === cat)
-            if (!existe) {
-              return [
-                ...prev,
-                {
-                  id: `cat-${Date.now()}`,
-                  categoria: cat,
-                  cantidad: 1,
-                  procesados: 1,
-                  estado: 'completo',
-                  ultimaActualizacion: fechaHoy(),
-                },
-              ]
-            }
-            return prev.map((c) =>
-              c.categoria === cat
-                ? {
-                    ...c,
-                    cantidad: c.cantidad + 1,
-                    procesados: c.procesados + 1,
-                    estado: 'completo',
-                    ultimaActualizacion: fechaHoy(),
-                  }
-                : c,
-            )
-          })
+          procesarIa(id, fila)
         }
       } else {
         setProgresos((p) => ({
           ...p,
-          [id]: { estado: 'cargando', progreso: pct },
+          [id]: { estado: 'subiendo', progreso: pct },
         }))
       }
-    }, 350)
+    }, 300)
+    timers.current[id] = timer
+  }
+
+  const procesarIa = (id: string, fila: FilaCarga) => {
+    setProgresos((p) => ({ ...p, [id]: { estado: 'procesando', progreso: 0 } }))
+    registrarEvento({
+      proyectoId,
+      proyectoCodigo,
+      accion: 'documento_cargado',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `Documento "${fila.file.name}" cargado al expediente (${fila.categoria}, v${fila.version})`,
+    })
+    setDocumentos((prev) => {
+      const existe = prev.some((d) => d.id === id)
+      if (existe) {
+        return prev.map((d) =>
+          d.id === id ? { ...d, estadoIa: 'procesando' as const } : d,
+        )
+      }
+      return [
+        ...prev,
+        {
+          id,
+          nombre: fila.file.name,
+          categoria: fila.categoria,
+          especialidad: fila.especialidad,
+          version: fila.version,
+          fecha: fechaHoy(),
+          tamaño: fila.file.size,
+          estadoIa: 'procesando' as const,
+          responsable: 'Sistema IA',
+        },
+      ]
+    })
+
+    let pct = 0
+    const timer = window.setInterval(() => {
+      pct += Math.floor(Math.random() * 20) + 6
+      if (pct >= 100) {
+        clearInterval(timer)
+        delete timers.current[id]
+        setProgresos((p) => ({
+          ...p,
+          [id]: { estado: 'procesado', progreso: 100 },
+        }))
+        setDocumentos((prev) =>
+          prev.map((d) =>
+            d.id === id
+              ? { ...d, estadoIa: 'procesado' as const, responsable: 'Sistema IA' }
+              : d,
+          ),
+        )
+        setCategorias((prev) => {
+          const cat = fila.categoria
+          const existe = prev.some((c) => c.categoria === cat)
+          if (!existe) {
+            return [
+              ...prev,
+              {
+                id: `cat-${Date.now()}`,
+                categoria: cat,
+                cantidad: 1,
+                procesados: 1,
+                estado: 'completo',
+                ultimaActualizacion: fechaHoy(),
+              },
+            ]
+          }
+          return prev.map((c) =>
+            c.categoria === cat
+              ? {
+                  ...c,
+                  cantidad: c.cantidad + 1,
+                  procesados: c.procesados + 1,
+                  estado: 'completo',
+                  ultimaActualizacion: fechaHoy(),
+                }
+              : c,
+          )
+        })
+        registrarEvento({
+          proyectoId,
+          proyectoCodigo,
+          accion: 'documento_procesado',
+          usuario: USUARIO_IA,
+          descripcion: `Documento "${fila.file.name}" procesado por IA (${fila.categoria})`,
+        })
+        toast.success('Documento procesado', {
+          description: fila.file.name,
+        })
+      } else {
+        setProgresos((p) => ({
+          ...p,
+          [id]: { estado: 'procesando', progreso: pct },
+        }))
+      }
+    }, 320)
     timers.current[id] = timer
   }
 
@@ -292,21 +405,35 @@ export function CargarDocumentosDialog({
     toast.info('Archivo eliminado de la lista')
   }
 
-  const confirmar = handleSubmit(() => {
-    const filas = getValues('archivos')
-    const porCargar = filas.filter((f) => {
-      const st = progresos[f.id]?.estado ?? 'pendiente'
-      return st === 'pendiente' || st === 'error'
-    })
-    if (porCargar.length === 0) {
-      toast.info('No hay archivos por cargar')
-      return
-    }
-    toast.info('Iniciando carga de documentos', {
-      description: `${porCargar.length} archivo(s)`,
-    })
-    porCargar.forEach((f) => simular(f.id))
-  })
+  const confirmar = handleSubmit(
+    () => {
+      const filas = getValues('archivos')
+      const porCargar = filas.filter((f) => {
+        const st = progresos[f.id]?.estado ?? 'pendiente'
+        return st === 'pendiente' || st === 'error'
+      })
+      if (porCargar.length === 0) {
+        toast.info('No hay archivos por cargar')
+        return
+      }
+      toast.info('Iniciando carga de documentos', {
+        description: `${porCargar.length} archivo(s)`,
+      })
+      porCargar.forEach((f) => simular(f.id))
+    },
+    () => {
+      const filas = getValues('archivos')
+      const incompletas = filas.filter(
+        (f) => !f.categoria || !f.especialidad || !f.version,
+      )
+      toast.error('No se pudo iniciar la carga', {
+        description:
+          incompletas.length > 0
+            ? `Completa la categoría, especialidad y versión de ${incompletas.length} archivo(s) marcados.`
+            : 'Revisa los campos marcados en cada archivo.',
+      })
+    },
+  )
 
   return (
     <>
@@ -366,7 +493,7 @@ export function CargarDocumentosDialog({
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
                       <EstadoCargaBadge estado={estado} />
-                      {estado === 'cargando' && (
+                      {estado === 'subiendo' && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -400,8 +527,14 @@ export function CargarDocumentosDialog({
                     </div>
                   </div>
 
-                  {(estado === 'cargando' || estado === 'cargado' || estado === 'error') && (
-                    <Progress value={progreso} className="mt-3 h-1.5" />
+                  {(estado === 'subiendo' ||
+                    estado === 'procesando' ||
+                    estado === 'procesado' ||
+                    estado === 'error') && (
+                    <>
+                      <Progress value={progreso} className="mt-3 h-1.5" />
+                      <FasesCarga estado={estado} />
+                    </>
                   )}
 
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -490,6 +623,11 @@ export function CargarDocumentosDialog({
                   {errors.archivos?.[index]?.categoria && (
                     <p className="mt-1.5 text-xs text-destructive">
                       {errors.archivos[index].categoria.message}
+                    </p>
+                  )}
+                  {errors.archivos?.[index]?.especialidad && (
+                    <p className="mt-1.5 text-xs text-destructive">
+                      {errors.archivos[index].especialidad.message}
                     </p>
                   )}
                   {errors.archivos?.[index]?.version && (

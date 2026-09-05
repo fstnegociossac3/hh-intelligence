@@ -52,6 +52,10 @@ import {
 import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
+import {
+  USUARIO_ACTUAL,
+} from '@/data/historial-store'
+import type { ResultadoReanalisis } from '@/data/observaciones-store'
 
 type Criticidad = 'critica' | 'alta' | 'media' | 'baja'
 type EstadoObs = 'nueva' | 'asignada' | 'en_revision' | 'justificada' | 'resuelta'
@@ -66,10 +70,9 @@ interface Observacion {
   criticidad: Criticidad
   responsable: string
   estado: EstadoObs
+  resultado?: ResultadoReanalisis
   fecha: string
 }
-
-const USUARIO_ACTUAL = 'Claudia Torres · Supervisor'
 
 const TIPOS_ESTADO: EstadoObs[] = [
   'nueva',
@@ -269,8 +272,6 @@ function seedTimeline(o: Observacion): EventoTimeline[] {
   return eventos
 }
 
-type ResultadoReanalisis = 'resuelta' | 'continua' | 'revision'
-
 interface VersionHistorial {
   id: string
   version: string
@@ -318,6 +319,7 @@ export function DetalleObservacionAmplio({
     estado?: EstadoObs
     criticidad?: Criticidad
     responsable?: string
+    resultado?: ResultadoReanalisis
   }) => void
 }) {
   const [comentario, setComentario] = useState('')
@@ -327,7 +329,7 @@ export function DetalleObservacionAmplio({
   const [paso, setPaso] = useState(0)
   const [progreso, setProgreso] = useState(0)
   const [resultado, setResultado] = useState<ResultadoReanalisis | null>(() =>
-    resultadoParaEstado(o.estado),
+    o.resultado ?? resultadoParaEstado(o.estado),
   )
   const [versiones, setVersiones] = useState<VersionHistorial[]>(() => [
     {
@@ -466,20 +468,21 @@ export function DetalleObservacionAmplio({
       }
       setVersiones((prev) => [...prev, nuevaVersion])
 
+      const estadoFinal: EstadoObs =
+        nuevoResultado === 'resuelta' ? 'resuelta' : 'en_revision'
+      onActualizar({ estado: estadoFinal, resultado: nuevoResultado })
+
       if (nuevoResultado === 'resuelta') {
-        onActualizar({ estado: 'resuelta' })
         registrar('Reanálisis completado', 'Observación resuelta', CheckCircle2)
         toast.success('Observación resuelta', {
           description: `El reanálisis de ${o.codigo} confirma que la inconsistencia fue resuelta.`,
         })
       } else if (nuevoResultado === 'continua') {
-        onActualizar({ estado: 'en_revision' })
         registrar('Reanálisis completado', 'Inconsistencia continúa', GitCompare)
         toast.error('Inconsistencia continúa', {
           description: `El documento actualizado aún presenta la inconsistencia en ${o.codigo}.`,
         })
       } else {
-        onActualizar({ estado: 'en_revision' })
         registrar('Reanálisis completado', 'Requiere revisión manual', History)
         toast.warning('Requiere revisión manual', {
           description: `${o.codigo} requiere una revisión manual del especialista.`,

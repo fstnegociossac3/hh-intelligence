@@ -22,12 +22,12 @@ import {
   FileClock,
   FolderPlus,
   GitCompare,
+  Pencil,
   RefreshCw,
   Search,
   ShieldAlert,
   TrendingUp,
   Upload,
-  UserCheck,
   Users,
   ListTree,
   Table2,
@@ -58,64 +58,55 @@ import { FadeIn, Stagger, StaggerItem } from '@/components/ui/motion'
 import { EmptyState } from '@/components/empty-state'
 import { KpiCard } from '@/components/kpi-card'
 import { cn } from '@/utils/cn'
-import { ESTADO_OK, ESTADO_WARNING, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
+import { ESTADO_OK, ESTADO_WARNING, ESTADO_INFO } from '@/utils/estados-clases'
+import {
+  useHistorial,
+  type AccionHistorial,
+  type EventoHistorial,
+} from '@/data/historial-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
 
-type TipoAccion =
-  | 'proyecto_creado'
-  | 'documento_cargado'
-  | 'documento_actualizado'
-  | 'documento_procesado'
-  | 'analisis_ejecutado'
-  | 'observacion_detectada'
-  | 'observacion_asignada'
-  | 'observacion_resuelta'
-  | 'reanalisis_ejecutado'
-  | 'reporte_generado'
+type EstadoEvento = 'completado' | 'resuelta' | 'detectada' | 'generado'
 
-type EstadoEvento = 'completado' | 'en_proceso' | 'pendiente' | 'resuelta' | 'detectada' | 'generado'
-
-interface EventoHistorial {
-  id: string
-  accion: TipoAccion
-  usuario: string
-  rol: string
-  elemento: string
-  estado: EstadoEvento
-  fecha: string
-}
-
-const TIPO_LABEL: Record<TipoAccion, string> = {
+const TIPO_LABEL: Record<AccionHistorial, string> = {
   proyecto_creado: 'Proyecto creado',
+  proyecto_editado: 'Proyecto editado',
   documento_cargado: 'Documento cargado',
-  documento_actualizado: 'Documento actualizado',
   documento_procesado: 'Documento procesado',
   analisis_ejecutado: 'Análisis ejecutado',
-  observacion_detectada: 'Observación detectada',
-  observacion_asignada: 'Observación asignada',
+  observacion_creada: 'Observación creada',
   observacion_resuelta: 'Observación resuelta',
   reanalisis_ejecutado: 'Reanálisis ejecutado',
   reporte_generado: 'Reporte generado',
 }
 
-const TIPO_ICONO: Record<TipoAccion, LucideIcon> = {
+const TIPO_ICONO: Record<AccionHistorial, LucideIcon> = {
   proyecto_creado: FolderPlus,
+  proyecto_editado: Pencil,
   documento_cargado: Upload,
-  documento_actualizado: FileClock,
   documento_procesado: FileCheck2,
   analisis_ejecutado: TrendingUp,
-  observacion_detectada: ShieldAlert,
-  observacion_asignada: UserCheck,
+  observacion_creada: ShieldAlert,
   observacion_resuelta: ClipboardCheck,
   reanalisis_ejecutado: RefreshCw,
   reporte_generado: FileBarChart,
 }
 
+const ESTADO_POR_ACCION: Record<AccionHistorial, EstadoEvento> = {
+  proyecto_creado: 'completado',
+  proyecto_editado: 'completado',
+  documento_cargado: 'completado',
+  documento_procesado: 'completado',
+  analisis_ejecutado: 'completado',
+  observacion_creada: 'detectada',
+  observacion_resuelta: 'resuelta',
+  reanalisis_ejecutado: 'completado',
+  reporte_generado: 'generado',
+}
+
 const ESTADO_LABEL: Record<EstadoEvento, string> = {
   completado: 'Completado',
-  en_proceso: 'En proceso',
-  pendiente: 'Pendiente',
   resuelta: 'Resuelta',
   detectada: 'Detectada',
   generado: 'Generado',
@@ -123,44 +114,24 @@ const ESTADO_LABEL: Record<EstadoEvento, string> = {
 
 const ESTADO_BADGE: Record<EstadoEvento, string> = {
   completado: ESTADO_OK,
-  en_proceso: ESTADO_INFO,
-  pendiente: ESTADO_NEUTRO,
   resuelta: ESTADO_OK,
   detectada: ESTADO_WARNING,
   generado: ESTADO_INFO,
 }
 
-const USUARIOS = [
-  'Andrea Quispe',
-  'Carlos Mendoza',
-  'Lucía Fernández',
-  'Jorge Paredes',
-  'Ana Quispe',
-  'IA · HH Intelligence',
-]
-
-const HISTORIAL_MOCK: EventoHistorial[] = [
-  { id: 'h-01', accion: 'proyecto_creado', usuario: 'Andrea Quispe', rol: 'Administradora', elemento: 'Expediente EXP-2025-0147', estado: 'completado', fecha: '2025-06-12T09:00:00' },
-  { id: 'h-02', accion: 'documento_cargado', usuario: 'Carlos Mendoza', rol: 'Analista', elemento: 'Planos Arquitectónicos.pdf', estado: 'completado', fecha: '2026-08-12T11:20:00' },
-  { id: 'h-03', accion: 'documento_cargado', usuario: 'Carlos Mendoza', rol: 'Analista', elemento: 'Metrados.xlsx', estado: 'completado', fecha: '2026-08-12T11:24:00' },
-  { id: 'h-04', accion: 'documento_actualizado', usuario: 'Lucía Fernández', rol: 'Revisora', elemento: 'Presupuesto.xlsx (v2)', estado: 'completado', fecha: '2026-08-14T09:45:00' },
-  { id: 'h-05', accion: 'documento_procesado', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'Planos Arquitectónicos.pdf', estado: 'completado', fecha: '2026-08-12T11:30:00' },
-  { id: 'h-06', accion: 'documento_procesado', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'Metrados.xlsx', estado: 'completado', fecha: '2026-08-12T11:35:00' },
-  { id: 'h-07', accion: 'analisis_ejecutado', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'Comparación Presupuesto vs. Metrado', estado: 'completado', fecha: '2026-08-14T10:10:00' },
-  { id: 'h-08', accion: 'observacion_detectada', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'OBS-001 · Excavación para cimentaciones', estado: 'detectada', fecha: '2026-08-14T10:12:00' },
-  { id: 'h-09', accion: 'observacion_detectada', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'OBS-002 · Acero de refuerzo', estado: 'detectada', fecha: '2026-08-14T10:13:00' },
-  { id: 'h-10', accion: 'observacion_asignada', usuario: 'Ana Quispe', rol: 'Revisora', elemento: 'OBS-002 · Acero de refuerzo', estado: 'completado', fecha: '2026-08-15T08:30:00' },
-  { id: 'h-11', accion: 'documento_actualizado', usuario: 'Jorge Paredes', rol: 'Analista', elemento: 'Metrados.xlsx (v2)', estado: 'completado', fecha: '2026-08-18T14:05:00' },
-  { id: 'h-12', accion: 'reanalisis_ejecutado', usuario: 'Lucía Fernández', rol: 'Revisora', elemento: 'Reanálisis Metrado vs. Plano', estado: 'completado', fecha: '2026-08-18T15:20:00' },
-  { id: 'h-13', accion: 'observacion_resuelta', usuario: 'Lucía Fernández', rol: 'Revisora', elemento: 'OBS-001 · Excavación para cimentaciones', estado: 'resuelta', fecha: '2026-08-19T11:00:00' },
-  { id: 'h-14', accion: 'observacion_asignada', usuario: 'Carlos Mendoza', rol: 'Analista', elemento: 'OBS-003 · Muros de contención', estado: 'completado', fecha: '2026-08-21T09:40:00' },
-  { id: 'h-15', accion: 'analisis_ejecutado', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'Comparación Metrado vs. Plano', estado: 'en_proceso', fecha: '2026-08-24T10:05:00' },
-  { id: 'h-16', accion: 'reporte_generado', usuario: 'Andrea Quispe', rol: 'Administradora', elemento: 'Reporte de coherencia documental', estado: 'generado', fecha: '2026-08-25T12:30:00' },
-  { id: 'h-17', accion: 'documento_cargado', usuario: 'Jorge Paredes', rol: 'Analista', elemento: 'Especificaciones técnicas.pdf', estado: 'completado', fecha: '2026-08-26T16:15:00' },
-  { id: 'h-18', accion: 'observacion_detectada', usuario: 'IA · HH Intelligence', rol: 'Motor de análisis', elemento: 'OBS-004 · Estudio de mecánica de suelos', estado: 'detectada', fecha: '2026-08-27T09:50:00' },
-  { id: 'h-19', accion: 'documento_actualizado', usuario: 'Ana Quispe', rol: 'Revisora', elemento: 'Presupuesto.xlsx (v3)', estado: 'completado', fecha: '2026-08-28T10:40:00' },
-  { id: 'h-20', accion: 'reporte_generado', usuario: 'Carlos Mendoza', rol: 'Analista', elemento: 'Informe ejecutivo general', estado: 'generado', fecha: '2026-08-29T13:10:00' },
-]
+function dividirUsuario(usuario: string) {
+  const partes = usuario.split(' · ')
+  if (partes.length >= 3) {
+    return {
+      nombre: `${partes[0]} · ${partes[1]}`,
+      rol: partes.slice(2).join(' · '),
+    }
+  }
+  if (partes.length === 2) {
+    return { nombre: partes[0], rol: partes[1] }
+  }
+  return { nombre: usuario, rol: '' }
+}
 
 function CeldaSortable({
   header,
@@ -193,7 +164,7 @@ function CeldaSortable({
   )
 }
 
-export function HistorialProyecto() {
+export function HistorialProyecto({ proyectoId }: { proyectoId: string }) {
   const [vista, setVista] = useState<'timeline' | 'tabla'>('timeline')
   const [busqueda, setBusqueda] = useState('')
   const [filtroUsuario, setFiltroUsuario] = useState('todos')
@@ -202,23 +173,39 @@ export function HistorialProyecto() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
 
+  const eventos = useHistorial()
+  const eventosProyecto = useMemo(
+    () => eventos.filter((e) => e.proyectoId === proyectoId),
+    [eventos, proyectoId],
+  )
+
+  const usuariosDisponibles = useMemo(
+    () => Array.from(new Set(eventosProyecto.map((e) => e.usuario))),
+    [eventosProyecto],
+  )
+
   const datosFiltrados = useMemo(() => {
-    return HISTORIAL_MOCK.filter((e) => {
+    const ahora = new Date()
+    return eventosProyecto.filter((e) => {
       if (filtroUsuario !== 'todos' && e.usuario !== filtroUsuario) return false
       if (filtroAccion !== 'todas' && e.accion !== filtroAccion) return false
       if (filtroFecha !== 'todas') {
-        const dia = e.fecha.slice(0, 10)
-        if (filtroFecha === 'hoy' && dia !== '2026-08-29') return false
-        if (filtroFecha === 'semana') {
-          const fecha = new Date(dia)
-          const limite = new Date('2026-08-23')
-          if (fecha < limite) return false
-        }
-        if (filtroFecha === 'mes' && !dia.startsWith('2026-08')) return false
+        const fecha = new Date(e.fecha)
+        if (filtroFecha === 'hoy' && fecha.toDateString() !== ahora.toDateString()) return false
+        if (
+          filtroFecha === 'semana' &&
+          fecha.getTime() < ahora.getTime() - 7 * 24 * 60 * 60 * 1000
+        )
+          return false
+        if (
+          filtroFecha === 'mes' &&
+          fecha.getTime() < ahora.getTime() - 30 * 24 * 60 * 60 * 1000
+        )
+          return false
       }
       return true
     })
-  }, [filtroUsuario, filtroAccion, filtroFecha])
+  }, [eventosProyecto, filtroUsuario, filtroAccion, filtroFecha])
 
   const columnas = useMemo<ColumnDef<EventoHistorial>[]>(
     () => [
@@ -239,16 +226,17 @@ export function HistorialProyecto() {
       {
         accessorKey: 'usuario',
         header: 'Usuario',
-        cell: ({ row }) => (
-          <span className="text-xs font-medium">{row.original.usuario}</span>
-        ),
-      },
-      {
-        accessorKey: 'rol',
-        header: 'Rol',
-        cell: ({ row }) => (
-          <span className="text-xs text-muted-foreground">{row.original.rol}</span>
-        ),
+        cell: ({ row }) => {
+          const { nombre, rol } = dividirUsuario(row.original.usuario)
+          return (
+            <div className="flex flex-col">
+              <span className="text-xs font-medium">{nombre}</span>
+              {rol && (
+                <span className="text-xs text-muted-foreground">{rol}</span>
+              )}
+            </div>
+          )
+        },
       },
       {
         accessorKey: 'accion',
@@ -264,22 +252,25 @@ export function HistorialProyecto() {
         },
       },
       {
-        accessorKey: 'elemento',
-        header: 'Elemento afectado',
+        accessorKey: 'descripcion',
+        header: 'Descripción',
         cell: ({ row }) => (
-          <span className="max-w-[200px] truncate text-xs">
-            {row.original.elemento}
+          <span className="max-w-[260px] truncate text-xs">
+            {row.original.descripcion}
           </span>
         ),
       },
       {
         accessorKey: 'estado',
         header: 'Estado',
-        cell: ({ row }) => (
-          <Badge variant="outline" className={ESTADO_BADGE[row.original.estado]}>
-            {ESTADO_LABEL[row.original.estado]}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const estado = ESTADO_POR_ACCION[row.original.accion]
+          return (
+            <Badge variant="outline" className={ESTADO_BADGE[estado]}>
+              {ESTADO_LABEL[estado]}
+            </Badge>
+          )
+        },
       },
     ],
     [],
@@ -311,14 +302,14 @@ export function HistorialProyecto() {
 
   const kpis = useMemo(
     () => ({
-      total: HISTORIAL_MOCK.length,
-      acciones: new Set(HISTORIAL_MOCK.map((e) => e.accion)).size,
-      usuarios: new Set(HISTORIAL_MOCK.map((e) => e.usuario)).size,
-      pendientes: HISTORIAL_MOCK.filter(
-        (e) => e.estado === 'en_proceso' || e.estado === 'pendiente',
+      total: eventosProyecto.length,
+      acciones: new Set(eventosProyecto.map((e) => e.accion)).size,
+      usuarios: new Set(eventosProyecto.map((e) => e.usuario)).size,
+      reanalisis: eventosProyecto.filter(
+        (e) => e.accion === 'reanalisis_ejecutado',
       ).length,
     }),
-    [],
+    [eventosProyecto],
   )
 
   const kpiItems: {
@@ -331,7 +322,7 @@ export function HistorialProyecto() {
     { titulo: 'Eventos registrados', valor: kpis.total, detalle: 'En el historial', icono: FileClock, tono: 'default' },
     { titulo: 'Tipos de acción', valor: kpis.acciones, detalle: 'Acciones distintas', icono: GitCompare, tono: 'info' },
     { titulo: 'Usuarios con actividad', valor: kpis.usuarios, detalle: 'Participantes', icono: Users, tono: 'success' },
-    { titulo: 'En proceso', valor: kpis.pendientes, detalle: 'Pendientes', icono: RefreshCw, tono: 'warning' },
+    { titulo: 'Reanálisis ejecutados', valor: kpis.reanalisis, detalle: 'Sobre observaciones', icono: RefreshCw, tono: 'warning' },
   ]
 
   return (
@@ -374,7 +365,7 @@ export function HistorialProyecto() {
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Buscar usuario, acción o elemento..."
+              placeholder="Buscar usuario, acción o descripción..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="pl-9"
@@ -389,7 +380,7 @@ export function HistorialProyecto() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="todos">Todos los usuarios</SelectItem>
-                {USUARIOS.map((u) => (
+                {usuariosDisponibles.map((u) => (
                   <SelectItem key={u} value={u}>{u}</SelectItem>
                 ))}
               </SelectContent>
@@ -402,7 +393,7 @@ export function HistorialProyecto() {
               <SelectContent>
                 <SelectItem value="todas">Todas las acciones</SelectItem>
                 {(
-                  Object.keys(TIPO_LABEL) as TipoAccion[]
+                  Object.keys(TIPO_LABEL) as AccionHistorial[]
                 ).map((t) => (
                   <SelectItem key={t} value={t}>{TIPO_LABEL[t]}</SelectItem>
                 ))}
@@ -435,6 +426,7 @@ export function HistorialProyecto() {
               <ol className="relative ml-2 space-y-5 border-l-2 border-white/10 pl-5">
                 {eventosVista.map((e) => {
                   const Icono = TIPO_ICONO[e.accion]
+                  const estado = ESTADO_POR_ACCION[e.accion]
                   const fecha = parseISO(e.fecha)
                   return (
                     <li key={e.id} className="relative">
@@ -449,16 +441,16 @@ export function HistorialProyecto() {
                             </span>
                             <Badge
                               variant="outline"
-                              className={ESTADO_BADGE[e.estado]}
+                              className={ESTADO_BADGE[estado]}
                             >
-                              {ESTADO_LABEL[e.estado]}
+                              {ESTADO_LABEL[estado]}
                             </Badge>
                           </div>
-                          <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                            <span className="text-foreground">{e.elemento}</span>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            <span className="text-foreground">{e.descripcion}</span>
                           </p>
                           <p className="mt-0.5 text-xs text-muted-foreground">
-                            {e.usuario} · <span className="capitalize">{e.rol}</span>
+                            {e.usuario}
                           </p>
                         </div>
                         <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-0.5 sm:pl-3">
@@ -526,12 +518,14 @@ export function HistorialProyecto() {
                 />
               ) : (
                 filas.map((fila) => {
-                  const filaOrig = fila.original
-                  const Icono = TIPO_ICONO[filaOrig.accion]
-                  const fecha = parseISO(filaOrig.fecha)
+                  const e = fila.original
+                  const Icono = TIPO_ICONO[e.accion]
+                  const estado = ESTADO_POR_ACCION[e.accion]
+                  const fecha = parseISO(e.fecha)
+                  const { nombre, rol } = dividirUsuario(e.usuario)
                   return (
                     <div
-                      key={filaOrig.id}
+                      key={e.id}
                       className="rounded-lg border bg-card p-3"
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -542,21 +536,26 @@ export function HistorialProyecto() {
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span className="text-sm font-medium">
-                                {TIPO_LABEL[filaOrig.accion]}
+                                {TIPO_LABEL[e.accion]}
                               </span>
                               <Badge
                                 variant="outline"
-                                className={ESTADO_BADGE[filaOrig.estado]}
+                                className={ESTADO_BADGE[estado]}
                               >
-                                {ESTADO_LABEL[filaOrig.estado]}
+                                {ESTADO_LABEL[estado]}
                               </Badge>
                             </div>
-                            <p className="mt-0.5 truncate text-xs text-foreground">
-                              {filaOrig.elemento}
+                            <p className="mt-0.5 text-xs text-foreground">
+                              {e.descripcion}
                             </p>
                             <p className="mt-0.5 text-xs text-muted-foreground">
-                              {filaOrig.usuario} ·{' '}
-                              <span className="capitalize">{filaOrig.rol}</span>
+                              {nombre}
+                              {rol && (
+                                <>
+                                  {' · '}
+                                  <span className="capitalize">{rol}</span>
+                                </>
+                              )}
                             </p>
                           </div>
                         </div>

@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, useCallback, useRef } from 'react'
+import type { ChangeEvent } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format, parseISO, isAfter } from 'date-fns'
@@ -28,6 +29,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
+  Copy,
+  Download,
   FolderKanban,
   Loader2,
   MoreHorizontal,
@@ -35,6 +38,7 @@ import {
   Plus,
   Search,
   Trash2,
+  Upload,
   Users,
   Eye,
 } from 'lucide-react'
@@ -66,6 +70,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -82,12 +87,35 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { KpiCard } from '@/components/kpi-card'
 import { ProyectoEstadoBadge, PROYECTO_ESTADO_LABEL } from '@/components/proyecto-estado-badge'
+import { usePermisos } from '@/utils/permisos'
 import { EmptyState } from '@/components/empty-state'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/motion'
 
-import { proyectos as datosProyectos } from '@/data/proyectos'
+import {
+  useProyectos,
+  crearProyecto,
+  actualizarProyecto,
+  eliminarProyecto as eliminarProyectoStore,
+  duplicarProyecto as duplicarProyectoStore,
+  guardarProyectos,
+  obtenerProyectos,
+} from '@/data/proyectos-store'
+import {
+  obtenerObservaciones,
+  guardarObservaciones,
+} from '@/data/observaciones-store'
+import {
+  leerArchivoJSON,
+  esProyectoValido,
+  esObservacionValida,
+  exportarProyectosPDF,
+} from '@/utils/export-import'
 import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
+import {
+  registrarEvento,
+  USUARIO_ACTUAL,
+} from '@/data/historial-store'
 
 const ESTADOS_DISPONIBLES: ProyectoEstado[] = [
   'borrador',
@@ -189,8 +217,19 @@ interface NuevoProyectoFormProps {
   onCerrar: () => void
 }
 
-function AccionesProyecto({ proyecto }: { proyecto: Proyecto }) {
+function AccionesProyecto({
+  proyecto,
+  onEditar,
+  onEliminar,
+  onDuplicar,
+}: {
+  proyecto: Proyecto
+  onEditar: (p: Proyecto) => void
+  onEliminar: (id: string) => void
+  onDuplicar: (p: Proyecto) => void
+}) {
   const navigate = useNavigate()
+  const { puedeEditar } = usePermisos()
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -207,19 +246,25 @@ function AccionesProyecto({ proyecto }: { proyecto: Proyecto }) {
           <Eye />
           Ver detalle
         </DropdownMenuItem>
-        <DropdownMenuItem
-          onClick={() => toast.info(`Editar ${proyecto.codigo}`)}
-        >
-          <Pencil />
-          Editar
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          className="text-destructive focus:text-destructive"
-          onClick={() => toast.error(`Eliminar ${proyecto.codigo}`)}
-        >
-          <Trash2 />
-          Eliminar
-        </DropdownMenuItem>
+        {puedeEditar && (
+          <>
+            <DropdownMenuItem onClick={() => onEditar(proyecto)}>
+              <Pencil />
+              Editar
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => onDuplicar(proyecto)}>
+              <Copy />
+              Duplicar
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onClick={() => onEliminar(proyecto.id)}
+            >
+              <Trash2 />
+              Eliminar
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -258,9 +303,14 @@ function CeldaSortable({
 
 export function ProyectosPage() {
   const navigate = useNavigate()
-  const [listaProyectos, setListaProyectos] =
-    useState<Proyecto[]>(datosProyectos)
+  const listaProyectos = useProyectos()
+  const inputImportarRef = useRef<HTMLInputElement>(null)
+  const { puedeEditar } = usePermisos()
   const [dialogAbierto, setDialogAbierto] = useState(false)
+  const [dialogEditarAbierto, setDialogEditarAbierto] = useState(false)
+  const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
+  const [proyectoEditando, setProyectoEditando] = useState<Proyecto | null>(null)
+  const [proyectoEliminarId, setProyectoEliminarId] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstadoRaw] = useState<string>('todos')
@@ -271,10 +321,126 @@ export function ProyectosPage() {
   })
 
   const colocarProyecto = (proyecto: Proyecto) => {
-    setListaProyectos((prev) => [proyecto, ...prev])
+    crearProyecto(proyecto)
+    registrarEvento({
+      proyectoId: proyecto.id,
+      proyectoCodigo: proyecto.codigo,
+      accion: 'proyecto_creado',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `Expediente ${proyecto.codigo} · ${proyecto.nombre} creado`,
+    })
     setDialogAbierto(false)
     toast.success('Proyecto creado correctamente')
     navigate('/proyectos')
+  }
+
+  const editarProyecto = useCallback((proyecto: Proyecto) => {
+    setProyectoEditando(proyecto)
+    setDialogEditarAbierto(true)
+  }, [])
+
+  const guardarEdicion = useCallback(() => {
+    if (!proyectoEditando) return
+    actualizarProyecto(proyectoEditando.id, {
+      nombre: proyectoEditando.nombre,
+      responsable: proyectoEditando.responsable,
+      entidad: proyectoEditando.entidad,
+      estado: proyectoEditando.estado,
+      actualizadoEl: format(new Date(), 'yyyy-MM-dd'),
+    })
+    registrarEvento({
+      proyectoId: proyectoEditando.id,
+      proyectoCodigo: proyectoEditando.codigo,
+      accion: 'proyecto_editado',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `Datos del expediente ${proyectoEditando.codigo} actualizados`,
+    })
+    setDialogEditarAbierto(false)
+    setProyectoEditando(null)
+    toast.success('Proyecto actualizado correctamente')
+  }, [proyectoEditando])
+
+  const confirmarEliminar = useCallback((id: string) => {
+    setProyectoEliminarId(id)
+    setDialogEliminarAbierto(true)
+  }, [])
+
+  const eliminarProyecto = useCallback(() => {
+    if (!proyectoEliminarId) return
+    const proyecto = listaProyectos.find((p) => p.id === proyectoEliminarId)
+    eliminarProyectoStore(proyectoEliminarId)
+    setDialogEliminarAbierto(false)
+    setProyectoEliminarId(null)
+    toast.success('Proyecto eliminado', {
+      description: `${proyecto?.codigo} fue eliminado del sistema.`,
+    })
+  }, [proyectoEliminarId, listaProyectos])
+
+  const duplicarProyecto = useCallback((proyecto: Proyecto) => {
+    const nuevo = duplicarProyectoStore(proyecto)
+    registrarEvento({
+      proyectoId: nuevo.id,
+      proyectoCodigo: nuevo.codigo,
+      accion: 'proyecto_creado',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `Copia del expediente ${proyecto.codigo} creada como ${nuevo.codigo}`,
+    })
+    toast.success('Proyecto duplicado', {
+      description: `Se creó una copia de ${nuevo.codigo}.`,
+    })
+  }, [])
+
+  const exportarProyectos = () => {
+    const observaciones = obtenerObservaciones()
+    exportarProyectosPDF(listaProyectos, observaciones, 'expedientes-hh-intelligence')
+    toast.success('Proyectos exportados', {
+      description: `${listaProyectos.length} expediente(s) descargados en formato PDF.`,
+    })
+  }
+
+  const manejarImportar = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+
+    try {
+      const datos = await leerArchivoJSON<{
+        proyectos?: unknown[]
+        observaciones?: unknown[]
+      }>(file)
+
+      const proyectosValidos = Array.isArray(datos?.proyectos)
+        ? datos.proyectos.filter(esProyectoValido)
+        : []
+      const observacionesValidas = Array.isArray(datos?.observaciones)
+        ? datos.observaciones.filter(esObservacionValida)
+        : []
+
+      if (proyectosValidos.length === 0) {
+        toast.error('Archivo no válido', {
+          description: 'El archivo no contiene proyectos con formato reconocido.',
+        })
+        return
+      }
+
+      const actuales = obtenerProyectos()
+      const mapaProyectos = new Map(actuales.map((p) => [p.id, p]))
+      proyectosValidos.forEach((p) => mapaProyectos.set(p.id, p))
+      guardarProyectos(Array.from(mapaProyectos.values()))
+
+      const observacionesActuales = obtenerObservaciones()
+      const mapaObs = new Map(observacionesActuales.map((o) => [o.id, o]))
+      observacionesValidas.forEach((o) => mapaObs.set(o.id, o))
+      guardarObservaciones(Array.from(mapaObs.values()))
+
+      toast.success('Importación completada', {
+        description: `${proyectosValidos.length} expediente(s) y ${observacionesValidas.length} observación(es) importados.`,
+      })
+    } catch {
+      toast.error('No se pudo importar', {
+        description: 'El archivo no es un JSON válido.',
+      })
+    }
   }
 
   const cambiarFiltroEstado = (valor: string) => {
@@ -418,10 +584,17 @@ export function ProyectosPage() {
         id: 'acciones',
         header: 'Acciones',
         enableSorting: false,
-        cell: ({ row }) => <AccionesProyecto proyecto={row.original} />,
+        cell: ({ row }) => (
+          <AccionesProyecto
+            proyecto={row.original}
+            onEditar={editarProyecto}
+            onEliminar={confirmarEliminar}
+            onDuplicar={duplicarProyecto}
+          />
+        ),
       },
     ]
-  }, [])
+  }, [editarProyecto, confirmarEliminar, duplicarProyecto])
 
   const table = useReactTable({
     data: datosFiltrados,
@@ -538,13 +711,44 @@ export function ProyectosPage() {
               </SelectContent>
             </Select>
 
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={exportarProyectos}
+            >
+              <Download />
+              Exportar
+            </Button>
+
+            {puedeEditar && (
+              <Button
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => inputImportarRef.current?.click()}
+              >
+                <Upload />
+                Importar
+              </Button>
+            )}
+
+            <input
+              ref={inputImportarRef}
+              type="file"
+              accept=".json,application/json"
+              className="hidden"
+              aria-label="Importar proyectos"
+              onChange={manejarImportar}
+            />
+
             <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
-              <DialogTrigger asChild>
-                <Button className="w-full sm:w-auto">
-                  <Plus />
-                  Nuevo proyecto
-                </Button>
-              </DialogTrigger>
+              {puedeEditar && (
+                <DialogTrigger asChild>
+                  <Button className="w-full sm:w-auto">
+                    <Plus />
+                    Nuevo proyecto
+                  </Button>
+                </DialogTrigger>
+              )}
               <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>Nuevo proyecto</DialogTitle>
@@ -639,7 +843,12 @@ export function ProyectosPage() {
                         {p.entidad}
                       </p>
                     </div>
-                    <AccionesProyecto proyecto={p} />
+                    <AccionesProyecto
+                      proyecto={p}
+                      onEditar={editarProyecto}
+                      onEliminar={confirmarEliminar}
+                      onDuplicar={duplicarProyecto}
+                    />
                   </div>
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <ProyectoEstadoBadge estado={p.estado} />
@@ -729,6 +938,134 @@ export function ProyectosPage() {
           </div>
         </div>
       </FadeIn>
+
+      <Dialog open={dialogEditarAbierto} onOpenChange={setDialogEditarAbierto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar proyecto</DialogTitle>
+            <DialogDescription>
+              Actualice los datos principales del expediente.
+            </DialogDescription>
+          </DialogHeader>
+          {proyectoEditando && (
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label htmlFor="ed-nombre">Nombre del proyecto</Label>
+                <Input
+                  id="ed-nombre"
+                  value={proyectoEditando.nombre}
+                  onChange={(e) =>
+                    setProyectoEditando((prev) =>
+                      prev ? { ...prev, nombre: e.target.value } : null,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ed-responsable">Responsable</Label>
+                <Input
+                  id="ed-responsable"
+                  value={proyectoEditando.responsable}
+                  onChange={(e) =>
+                    setProyectoEditando((prev) =>
+                      prev ? { ...prev, responsable: e.target.value } : null,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="ed-entidad">Entidad pública</Label>
+                <Input
+                  id="ed-entidad"
+                  value={proyectoEditando.entidad}
+                  onChange={(e) =>
+                    setProyectoEditando((prev) =>
+                      prev ? { ...prev, entidad: e.target.value } : null,
+                    )
+                  }
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Estado</Label>
+                <Select
+                  value={proyectoEditando.estado}
+                  onValueChange={(v) =>
+                    setProyectoEditando((prev) =>
+                      prev ? { ...prev, estado: v as ProyectoEstado } : null,
+                    )
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ESTADOS_DISPONIBLES.map((e) => (
+                      <SelectItem key={e} value={e}>
+                        {PROYECTO_ESTADO_LABEL[e]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setDialogEditarAbierto(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={
+                !proyectoEditando ||
+                proyectoEditando.nombre.trim().length < 5
+              }
+              onClick={guardarEdicion}
+            >
+              Guardar cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogEliminarAbierto} onOpenChange={setDialogEliminarAbierto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Eliminar proyecto</DialogTitle>
+            <DialogDescription>
+              Esta acción no se puede deshacer. Se eliminará permanentemente el
+              expediente y todos sus datos asociados.
+            </DialogDescription>
+          </DialogHeader>
+          {proyectoEliminarId && (
+            <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-4">
+              <p className="text-sm text-destructive">
+                ¿Está seguro que desea eliminar el proyecto{' '}
+                <strong>
+                  {listaProyectos.find((p) => p.id === proyectoEliminarId)?.codigo}
+                </strong>
+                ?
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setDialogEliminarAbierto(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={eliminarProyecto}
+            >
+              <Trash2 />
+              Eliminar permanentemente
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

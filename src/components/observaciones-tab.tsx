@@ -1,5 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useMemo, useState } from 'react'
 import {
   type ColumnDef,
   type Header,
@@ -19,13 +18,13 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   Eye,
   FileText,
-  MoreHorizontal,
-  PlusCircle,
-  Search,
   Gauge,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -33,6 +32,7 @@ import { KpiCard } from '@/components/kpi-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Table,
   TableBody,
@@ -56,23 +56,34 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/motion'
 import { EmptyState } from '@/components/empty-state'
-import { usePermisos } from '@/utils/permisos'
+import { DetalleObservacionAmplio } from '@/components/detalle-observacion'
 import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
 import type { LucideIcon } from 'lucide-react'
-import { DetalleObservacionAmplio } from '@/components/detalle-observacion'
 import {
   useObservaciones,
+  crearObservacion,
   actualizarObservacion,
+  eliminarObservacion,
   RESPONSABLES,
+  REGLAS,
+  TIPOS_INCONSISTENCIA,
   type Observacion,
   type EstadoObs,
   type CriticidadObs as Criticidad,
 } from '@/data/observaciones-store'
-import { useProyectos } from '@/data/proyectos-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
 
@@ -140,33 +151,34 @@ function CeldaSortable({ header }: { header: Header<Observacion, unknown> }) {
   )
 }
 
-export function ObservacionesPage() {
+export function ObservacionesTab({
+  proyectoId: _proyectoId,
+  proyectoCodigo,
+}: {
+  proyectoId: string
+  proyectoCodigo: string
+}) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [busqueda, setBusqueda] = useState('')
-  const [filtroProyecto, setFiltroProyecto] = useState('todos')
   const [filtroCriticidad, setFiltroCriticidad] = useState('todas')
-  const [filtroResponsable, setFiltroResponsable] = useState('todos')
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
-  const [searchParams, setSearchParams] = useSearchParams()
-  const [seleccionId, setSeleccionId] = useState<string | null>(() =>
-    searchParams.get('obs'),
-  )
+  const [seleccionId, setSeleccionId] = useState<string | null>(null)
   const observaciones = useObservaciones()
-  const codigosProyecto = useProyectos().map((p) => p.codigo)
-  const { puedeEditar } = usePermisos()
+  const [dialogNueva, setDialogNueva] = useState(false)
+
+  const observacionesProyecto = useMemo(
+    () => observaciones.filter((o) => o.proyecto === proyectoCodigo),
+    [observaciones, proyectoCodigo],
+  )
 
   const datosFiltrados = useMemo(() => {
-    return observaciones.filter((o) => {
-      if (filtroProyecto !== 'todos' && o.proyecto !== filtroProyecto) return false
-      if (filtroCriticidad !== 'todas' && o.criticidad !== filtroCriticidad)
-        return false
-      if (filtroResponsable !== 'todos' && o.responsable !== filtroResponsable)
-        return false
+    return observacionesProyecto.filter((o) => {
+      if (filtroCriticidad !== 'todas' && o.criticidad !== filtroCriticidad) return false
       if (filtroEstado !== 'todos' && o.estado !== filtroEstado) return false
       return true
     })
-  }, [filtroProyecto, filtroCriticidad, filtroResponsable, filtroEstado, observaciones])
+  }, [observacionesProyecto, filtroCriticidad, filtroEstado])
 
   const columnas = useMemo<ColumnDef<Observacion>[]>(
     () => [
@@ -180,24 +192,17 @@ export function ObservacionesPage() {
         ),
       },
       {
-        accessorKey: 'proyecto',
-        header: 'Proyecto',
-        cell: ({ row }) => (
-          <span className="font-mono text-xs">{row.original.proyecto}</span>
-        ),
-      },
-      {
         accessorKey: 'partida',
         header: 'Partida',
         cell: ({ row }) => (
-          <span className="max-w-[180px] truncate text-sm font-medium">
+          <span className="max-w-[200px] truncate text-sm font-medium">
             {row.original.partida}
           </span>
         ),
       },
       {
         accessorKey: 'tipoInconsistencia',
-        header: 'Tipo de inconsistencia',
+        header: 'Tipo',
         cell: ({ row }) => (
           <span className="max-w-[160px] truncate text-xs text-muted-foreground">
             {row.original.tipoInconsistencia}
@@ -266,24 +271,24 @@ export function ObservacionesPage() {
                 <Eye className="mr-2 h-4 w-4" />
                 Ver detalle
               </DropdownMenuItem>
-              {puedeEditar && (
-                <DropdownMenuItem
-                  onClick={() =>
-                    toast.info(`Asignar ${row.original.codigo}`, {
-                      description: 'Selecciona un responsable para la observación.',
-                    })
-                  }
-                >
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Asignar responsable
-                </DropdownMenuItem>
-              )}
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={() => {
+                  eliminarObservacion(row.original.id)
+                  toast.success('Observación eliminada', {
+                    description: `${row.original.codigo} fue eliminada.`,
+                  })
+                }}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [puedeEditar],
+    [],
   )
 
   const table = useReactTable({
@@ -310,21 +315,13 @@ export function ObservacionesPage() {
 
   const kpis = useMemo(
     () => ({
-      total: observaciones.length,
-      criticas: observaciones.filter((o) => o.criticidad === 'critica').length,
-      altas: observaciones.filter((o) => o.criticidad === 'alta').length,
-      medias: observaciones.filter((o) => o.criticidad === 'media').length,
-      resueltas: observaciones.filter((o) => o.estado === 'resuelta').length,
+      total: observacionesProyecto.length,
+      criticas: observacionesProyecto.filter((o) => o.criticidad === 'critica').length,
+      altas: observacionesProyecto.filter((o) => o.criticidad === 'alta').length,
+      resueltas: observacionesProyecto.filter((o) => o.estado === 'resuelta').length,
     }),
-    [observaciones],
+    [observacionesProyecto],
   )
-
-  const pctResuelto = Math.round((kpis.resueltas / Math.max(kpis.total, 1)) * 100)
-
-  useEffect(() => {
-    const obs = searchParams.get('obs')
-    if (obs) setSeleccionId(obs)
-  }, [searchParams])
 
   const seleccionado = observaciones.find((o) => o.id === seleccionId) ?? null
 
@@ -335,16 +332,15 @@ export function ObservacionesPage() {
     icono: LucideIcon
     tono: 'default' | 'success' | 'warning' | 'danger' | 'info'
   }[] = [
-    { titulo: 'Total observaciones', valor: kpis.total, detalle: 'Registradas en sistema', icono: FileText, tono: 'default' },
-    { titulo: 'Críticas', valor: kpis.criticas, detalle: 'Requieren atención inmediata', icono: AlertTriangle, tono: 'danger' },
-    { titulo: 'Altas', valor: kpis.altas, detalle: 'Prioridad de resolución', icono: Gauge, tono: 'warning' },
-    { titulo: 'Medias', valor: kpis.medias, detalle: 'Control y seguimiento', icono: Gauge, tono: 'info' },
-    { titulo: 'Resueltas', valor: kpis.resueltas, detalle: `${pctResuelto}% de avance`, icono: CheckCircle2, tono: 'success' },
+    { titulo: 'Total', valor: kpis.total, detalle: 'Observaciones del proyecto', icono: FileText, tono: 'default' },
+    { titulo: 'Críticas', valor: kpis.criticas, detalle: 'Requieren atención', icono: AlertTriangle, tono: 'danger' },
+    { titulo: 'Altas', valor: kpis.altas, detalle: 'Prioridad alta', icono: Gauge, tono: 'warning' },
+    { titulo: 'Resueltas', valor: kpis.resueltas, detalle: 'Cerradas', icono: CheckCircle2, tono: 'success' },
   ]
 
   return (
     <div className="space-y-6">
-      <Stagger className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-5">
+      <Stagger className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         {kpiItems.map((kpi) => (
           <StaggerItem key={kpi.titulo}>
             <KpiCard
@@ -358,20 +354,13 @@ export function ObservacionesPage() {
         ))}
       </Stagger>
 
-      <FadeIn className="flex items-center gap-2">
-        <h2 className="flex items-center gap-2 text-xl font-semibold">
-          <ClipboardCheck className="h-5 w-5 text-primary" />
-          Registro de observaciones
-        </h2>
-      </FadeIn>
-
       <FadeIn className="space-y-4">
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="relative w-full sm:max-w-xs">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Buscar código, partida o regla..."
+              placeholder="Buscar partida o regla..."
               value={busqueda}
               onChange={(e) => setBusqueda(e.target.value)}
               className="pl-9"
@@ -379,20 +368,9 @@ export function ObservacionesPage() {
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:flex lg:flex-wrap lg:items-center lg:gap-2">
-            <Select value={filtroProyecto} onValueChange={setFiltroProyecto}>
-              <SelectTrigger className="w-full lg:w-48">
-                <SelectValue placeholder="Proyecto" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos los proyectos</SelectItem>
-                {codigosProyecto.map((p) => (
-                  <SelectItem key={p} value={p}>{p}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex flex-wrap items-center gap-2">
             <Select value={filtroCriticidad} onValueChange={setFiltroCriticidad}>
-              <SelectTrigger className="w-full lg:w-44">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Criticidad" />
               </SelectTrigger>
               <SelectContent>
@@ -403,19 +381,9 @@ export function ObservacionesPage() {
                 <SelectItem value="baja">Baja</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={filtroResponsable} onValueChange={setFiltroResponsable}>
-              <SelectTrigger className="w-full lg:w-48">
-                <SelectValue placeholder="Responsable" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="todos">Todos los responsables</SelectItem>
-                {RESPONSABLES.map((r) => (
-                  <SelectItem key={r} value={r}>{r}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+
             <Select value={filtroEstado} onValueChange={setFiltroEstado}>
-              <SelectTrigger className="w-full lg:w-44">
+              <SelectTrigger className="w-full sm:w-40">
                 <SelectValue placeholder="Estado" />
               </SelectTrigger>
               <SelectContent>
@@ -427,11 +395,33 @@ export function ObservacionesPage() {
                 <SelectItem value="resuelta">Resuelta</SelectItem>
               </SelectContent>
             </Select>
+
+            <Dialog open={dialogNueva} onOpenChange={setDialogNueva}>
+              <DialogTrigger asChild>
+                <Button className="w-full sm:w-auto">
+                  <Plus />
+                  Nueva observación
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <NuevaObservacionForm
+                  proyectoCodigo={proyectoCodigo}
+                  onGuardar={(obs) => {
+                    crearObservacion(obs)
+                    setDialogNueva(false)
+                    toast.success('Observación creada', {
+                      description: `${obs.codigo} registrada correctamente.`,
+                    })
+                  }}
+                  onCerrar={() => setDialogNueva(false)}
+                />
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
-        <div className="rounded-lg border bg-card">
-          <div className="hidden lg:block">
+        <div className="hidden overflow-x-auto lg:block">
+          <div className="rounded-lg border bg-card">
             <Table>
               <TableHeader>
                 {table.getHeaderGroups().map((grupo) => (
@@ -447,12 +437,11 @@ export function ObservacionesPage() {
               <TableBody>
                 {filas.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={columnas.length} className="h-48 p-0">
-                      <EmptyState
-                        titulo="Sin observaciones"
-                        descripcion="No hay observaciones que coincidan con los filtros aplicados."
-                        icono={FileText}
-                      />
+                    <TableCell colSpan={columnas.length} className="h-40 text-center">
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <FileText className="h-8 w-8" />
+                        <span>No se encontraron observaciones para este proyecto</span>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ) : (
@@ -473,53 +462,46 @@ export function ObservacionesPage() {
               </TableBody>
             </Table>
           </div>
+        </div>
 
-          <div className="grid gap-3 p-4 lg:hidden">
-            {filas.length === 0 ? (
-              <EmptyState
-                titulo="Sin observaciones"
-                descripcion="No hay observaciones que coincidan con los filtros aplicados."
-                icono={FileText}
-              />
-            ) : (
-              filas.map((fila) => {
-                const o = fila.original
-                const Icono = CRITICIDAD_ICONO[o.criticidad]
-                return (
-                  <button
-                    key={fila.id}
-                    type="button"
-                    onClick={() => setSeleccionId(o.id)}
-                    className="rounded-lg border p-4 text-left transition-colors hover:bg-muted/40"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-mono text-xs font-medium text-primary">
-                          {o.codigo}
-                        </p>
-                        <p className="truncate text-sm font-medium">{o.partida}</p>
-                      </div>
-                      <Badge variant="outline" className={CRITICIDAD_BADGE[o.criticidad]}>
-                        <Icono className="mr-1 h-3 w-3" />
-                        {CRITICIDAD_LABEL[o.criticidad]}
-                      </Badge>
+        <div className="grid gap-3 lg:hidden">
+          {filas.length === 0 ? (
+            <EmptyState
+              icono={FileText}
+              titulo="Sin observaciones"
+              descripcion="No hay observaciones para este proyecto."
+            />
+          ) : (
+            filas.map((fila) => {
+              const o = fila.original
+              const Icono = CRITICIDAD_ICONO[o.criticidad]
+              return (
+                <button
+                  key={fila.id}
+                  type="button"
+                  onClick={() => setSeleccionId(o.id)}
+                  className="rounded-lg border p-4 text-left transition-colors hover:bg-muted/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-mono text-xs font-medium text-primary">{o.codigo}</p>
+                      <p className="truncate text-sm font-medium">{o.partida}</p>
                     </div>
-                    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <span className="font-mono">{o.proyecto}</span>
-                      <span>·</span>
-                      <span className="truncate">{o.tipoInconsistencia}</span>
-                    </div>
-                    <div className="mt-2 flex items-center justify-between">
-                      <Badge variant="outline" className={ESTADO_BADGE[o.estado]}>
-                        {ESTADO_LABEL[o.estado]}
-                      </Badge>
-                      <span className="text-xs text-muted-foreground">{o.responsable}</span>
-                    </div>
-                  </button>
-                )
-              })
-            )}
-          </div>
+                    <Badge variant="outline" className={CRITICIDAD_BADGE[o.criticidad]}>
+                      <Icono className="mr-1 h-3 w-3" />
+                      {CRITICIDAD_LABEL[o.criticidad]}
+                    </Badge>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between">
+                    <Badge variant="outline" className={ESTADO_BADGE[o.estado]}>
+                      {ESTADO_LABEL[o.estado]}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{o.responsable}</span>
+                  </div>
+                </button>
+              )
+            })
+          )}
         </div>
 
         <div className="flex flex-col items-center justify-between gap-3 sm:flex-row">
@@ -550,13 +532,13 @@ export function ObservacionesPage() {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="outline" size="icon" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()} aria-label="Página anterior">
+            <Button variant="outline" size="icon" disabled={!table.getCanPreviousPage()} onClick={() => table.previousPage()}>
               <ChevronLeft />
             </Button>
             <span className="min-w-16 text-center text-sm">
               {paginacion.pageIndex + 1} / {Math.max(totalPaginas, 1)}
             </span>
-            <Button variant="outline" size="icon" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()} aria-label="Página siguiente">
+            <Button variant="outline" size="icon" disabled={!table.getCanNextPage()} onClick={() => table.nextPage()}>
               <ChevronRight />
             </Button>
           </div>
@@ -567,14 +549,7 @@ export function ObservacionesPage() {
         <DetalleObservacionAmplio
           key={seleccionId}
           open
-          onOpenChange={(o) => {
-            if (!o) {
-              setSeleccionId(null)
-              if (searchParams.get('obs')) {
-                setSearchParams({}, { replace: true })
-              }
-            }
-          }}
+          onOpenChange={(o) => !o && setSeleccionId(null)}
           o={seleccionado}
           onActualizar={(campos) => {
             if (seleccionId) actualizarObservacion(seleccionId, campos)
@@ -582,5 +557,125 @@ export function ObservacionesPage() {
         />
       )}
     </div>
+  )
+}
+
+function NuevaObservacionForm({
+  proyectoCodigo,
+  onGuardar,
+  onCerrar,
+}: {
+  proyectoCodigo: string
+  onGuardar: (obs: Observacion) => void
+  onCerrar: () => void
+}) {
+  const [partida, setPartida] = useState('')
+  const [tipoInconsistencia, setTipoInconsistencia] = useState(TIPOS_INCONSISTENCIA[0])
+  const [regla, setRegla] = useState(REGLAS[0])
+  const [criticidad, setCriticidad] = useState<Criticidad>('media')
+  const [responsable, setResponsable] = useState(RESPONSABLES[0])
+
+  const handleSubmit = () => {
+    if (!partida.trim()) {
+      toast.error('Ingrese la partida')
+      return
+    }
+    const id = `o-${Date.now()}`
+    const codigo = `OBS-${String(Math.floor(Math.random() * 900) + 100).padStart(3, '0')}`
+    const hoy = new Date()
+    const fecha = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`
+
+    onGuardar({
+      id,
+      codigo,
+      proyecto: proyectoCodigo,
+      partida: partida.trim(),
+      tipoInconsistencia,
+      regla,
+      criticidad,
+      responsable,
+      estado: 'nueva',
+      fecha,
+    })
+  }
+
+  return (
+    <>
+      <DialogHeader>
+        <DialogTitle>Nueva observación</DialogTitle>
+        <DialogDescription>
+          Registre una nueva observación para el proyecto {proyectoCodigo}.
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <div className="space-y-2">
+          <Label htmlFor="obs-partida">Partida</Label>
+          <Input
+            id="obs-partida"
+            placeholder="Nombre de la partida"
+            value={partida}
+            onChange={(e) => setPartida(e.target.value)}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Tipo de inconsistencia</Label>
+          <Select value={tipoInconsistencia} onValueChange={setTipoInconsistencia}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {TIPOS_INCONSISTENCIA.map((t) => (
+                <SelectItem key={t} value={t}>{t}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-2">
+          <Label>Regla de revisión</Label>
+          <Select value={regla} onValueChange={setRegla}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {REGLAS.map((r) => (
+                <SelectItem key={r} value={r}>{r}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-2">
+            <Label>Criticidad</Label>
+            <Select value={criticidad} onValueChange={(v) => setCriticidad(v as Criticidad)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(Object.keys(CRITICIDAD_LABEL) as Criticidad[]).map((c) => (
+                  <SelectItem key={c} value={c}>{CRITICIDAD_LABEL[c]}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2">
+            <Label>Responsable</Label>
+            <Select value={responsable} onValueChange={setResponsable}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {RESPONSABLES.map((r) => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button variant="ghost" onClick={onCerrar}>Cancelar</Button>
+        <Button onClick={handleSubmit} disabled={!partida.trim()}>Crear observación</Button>
+      </DialogFooter>
+    </>
   )
 }

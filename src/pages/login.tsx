@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useNavigate } from 'react-router-dom'
+import { Navigate, useNavigate } from 'react-router-dom'
 import {
   ArrowRight,
   BrainCircuit,
@@ -34,11 +34,14 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Logo } from '@/components/logo'
+import {
+  iniciarSesion,
+  tomarRutaOrigen,
+  USUARIOS_DEMO,
+  useSesionGuardada,
+} from '@/data/sesion-store'
 
-const CREDENCIALES_DEMO = {
-  email: 'admin@hh.com',
-  password: '123456',
-}
+const CLAVE_DEMO = '123456'
 
 const loginSchema = z.object({
   email: z
@@ -156,27 +159,40 @@ export function LoginPage() {
 
   const recordarme = watch('recordarme')
 
+  const sesionGuardada = useSesionGuardada()
+  const [sesionAlMontar] = useState(sesionGuardada)
+  if (sesionAlMontar) {
+    return <Navigate to="/dashboard" replace />
+  }
+
   const onSubmit = async (values: LoginValues) => {
     if (loading) return
     setLoading(true)
 
     await new Promise((resolve) => setTimeout(resolve, 900))
 
-    if (
-      values.email.trim().toLowerCase() === CREDENCIALES_DEMO.email &&
-      values.password === CREDENCIALES_DEMO.password
-    ) {
-      toast.success('Bienvenido, Carlos Mendoza')
-      navigate('/dashboard')
+    const usuario = USUARIOS_DEMO.find(
+      (u) =>
+        u.email.toLowerCase() === values.email.trim().toLowerCase() &&
+        values.password === CLAVE_DEMO,
+    )
+
+    if (usuario) {
+      iniciarSesion(usuario, values.recordarme === true)
+      toast.success(`Bienvenido, ${usuario.nombre}`, {
+        description: `Rol: ${usuario.rol}.`,
+      })
+      const destino = tomarRutaOrigen() ?? '/dashboard'
+      navigate(destino, { replace: true })
     } else {
       toast.error('Credenciales incorrectas')
       setLoading(false)
     }
   }
 
-  const rellenarDemo = () => {
-    setValue('email', CREDENCIALES_DEMO.email)
-    setValue('password', CREDENCIALES_DEMO.password)
+  const rellenarDemo = (email: string) => {
+    setValue('email', email)
+    setValue('password', CLAVE_DEMO)
     toast.info('Credenciales demo cargadas')
   }
 
@@ -320,14 +336,22 @@ export function LoginPage() {
                     </>
                   )}
                 </Button>
-                <button
-                  type="button"
-                  onClick={rellenarDemo}
-                  disabled={loading}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  Usar credenciales demo (admin@hh.com / 123456)
-                </button>
+                <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                  {USUARIOS_DEMO.map((u) => (
+                    <button
+                      key={u.id}
+                      type="button"
+                      onClick={() => rellenarDemo(u.email)}
+                      disabled={loading}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {u.rol} · {u.email}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-center text-xs text-muted-foreground">
+                  Clave demo: {CLAVE_DEMO}
+                </p>
               </CardFooter>
             </form>
           </Card>
