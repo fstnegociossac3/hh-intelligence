@@ -26,9 +26,16 @@ export interface Proyecto {
   monto: number
   fechaCreacion: string
   fechaInicio: string | null
+  fechaEntrega?: string | null
   actualizadoEl: string
   estado: ProyectoEstado
   ubicacion: string
+  descripcion?: string
+  especialistas?: string
+  revisor?: string
+  departamento?: string
+  provincia?: string
+  distrito?: string
 }
 
 export interface Analisis {

@@ -1,10 +1,11 @@
 import {
   BarChart3,
   ClipboardCheck,
-GitCompare,
+  GitCompare,
   FileText,
   LayoutDashboard,
   Settings,
+  User,
   Users,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
@@ -16,6 +17,7 @@ export interface AppRoute {
   descripcion: string
   icon: LucideIcon
   modulo: ModuloSistema
+  oculta?: boolean
 }
 
 export const rutas: AppRoute[] = [
@@ -74,5 +76,13 @@ export const rutas: AppRoute[] = [
     descripcion: 'Parámetros del sistema',
     icon: Settings,
     modulo: 'configuracion',
+  },
+  {
+    path: '/perfil',
+    nombre: 'Perfil',
+    descripcion: 'Datos de la sesión activa',
+    icon: User,
+    modulo: 'perfil',
+    oculta: true,
   },
 ]

@@ -84,6 +84,7 @@ import {
   type EstadoObs,
   type CriticidadObs as Criticidad,
 } from '@/data/observaciones-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
 
@@ -162,7 +163,8 @@ export function ObservacionesTab({
   const [busqueda, setBusqueda] = useState('')
   const [filtroCriticidad, setFiltroCriticidad] = useState('todas')
   const [filtroEstado, setFiltroEstado] = useState('todos')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [seleccionId, setSeleccionId] = useState<string | null>(null)
   const observaciones = useObservaciones()
   const [dialogNueva, setDialogNueva] = useState(false)
@@ -527,7 +529,7 @@ export function ObservacionesTab({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FILAS_POR_PAGINA.map((n) => (
+                {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                   <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
                 ))}
               </SelectContent>

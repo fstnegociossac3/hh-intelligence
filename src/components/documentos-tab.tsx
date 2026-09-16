@@ -75,6 +75,7 @@ import {
   VERSIONES,
 } from '@/data/proyecto-detalle'
 import type { DocumentoLista, EstadoIa } from '@/data/proyecto-detalle'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 
 const FILAS_POR_PAGINA = [6, 8, 10, 15]
 
@@ -153,10 +154,8 @@ export function DocumentosTable({
   const [filtroEspecialidad, setFiltroEspecialidad] = useState('todas')
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [filtroVersion, setFiltroVersion] = useState('todas')
-  const [paginacion, setPaginacion] = useState({
-    pageIndex: 0,
-    pageSize: 8,
-  })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [docInfo, setDocInfo] = useState<DocumentoLista | null>(null)
   const [docVisor, setDocVisor] = useState<DocumentoLista | null>(null)
   const [docVersiones, setDocVersiones] = useState<DocumentoLista | null>(null)
@@ -529,7 +528,7 @@ export function DocumentosTable({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {FILAS_POR_PAGINA.map((n) => (
+              {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                 <SelectItem key={n} value={String(n)}>
                   {n} / pág.
                 </SelectItem>
@@ -589,7 +588,7 @@ export function DocumentosTable({
                 ['Responsable', docInfo.responsable],
                 [
                   'Coherencia',
-                  `${Math.floor(70 + Math.random() * 25)}%`,
+                  `${Math.max(0, 100 - ((docInfo.nombre.length * 7 + docInfo.version.length * 13) % 30))}%`,
                 ],
                 ['Estado IA', ESTADO_IA_LABEL[docInfo.estadoIa]],
               ].map(([k, v]) => (

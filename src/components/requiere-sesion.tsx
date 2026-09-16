@@ -1,5 +1,6 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
+import { toast } from 'sonner'
 
 import {
   estaCierreManual,
@@ -7,7 +8,15 @@ import {
   useSesionGuardada,
 } from '@/data/sesion-store'
 import { rutas } from '@/routes/config'
-import { MODULOS_POR_ROL, rolComoClave } from '@/utils/permisos'
+import { puedeVerModulo } from '@/utils/permisos'
+
+function RedirigirPorAccesoDenegado() {
+  useEffect(() => {
+    toast.error('No tiene permisos para acceder a este módulo.')
+  }, [])
+
+  return <Navigate to="/dashboard" replace />
+}
 
 export function RequiereSesion({ children }: { children: ReactNode }) {
   const sesion = useSesionGuardada()
@@ -26,11 +35,8 @@ export function RequiereSesion({ children }: { children: ReactNode }) {
       ubicacion.pathname.startsWith(`${r.path}/`),
   )
 
-  if (ruta) {
-    const clave = rolComoClave(sesion.usuario.rol)
-    if (!MODULOS_POR_ROL[clave].includes(ruta.modulo)) {
-      return <Navigate to="/dashboard" replace />
-    }
+  if (ruta && !puedeVerModulo(sesion.usuario.rol, ruta.modulo)) {
+    return <RedirigirPorAccesoDenegado />
   }
 
   return <>{children}</>

@@ -48,7 +48,17 @@ export const RESPONSABLES = [
   'Jorge Paredes',
   'Ana Quispe',
   'Pedro Rojas',
+  'María Torres',
+  'Luis Paredes',
 ]
+
+const ESTADO_LABEL: Record<EstadoObs, string> = {
+  nueva: 'Nueva',
+  asignada: 'Asignada',
+  en_revision: 'En revisión',
+  justificada: 'Justificada',
+  resuelta: 'Resuelta',
+}
 
 export const REGLAS = [
   'Presupuesto vs. Metrado',
@@ -220,6 +230,7 @@ export function actualizarObservacion(
   const existente = leer().find((o) => o.id === id)
   escribir(leer().map((o) => (o.id === id ? { ...o, ...datos } : o)))
   if (!existente) return
+
   if (datos.resultado) {
     registrarEvento({
       proyectoCodigo: existente.proyecto,
@@ -235,24 +246,41 @@ export function actualizarObservacion(
         ruta: `/observaciones?obs=${existente.id}`,
       })
     }
-  } else if (datos.estado === 'resuelta') {
+  }
+
+  if (datos.estado && datos.estado !== existente.estado && !(datos.resultado === 'resuelta' && datos.estado === 'resuelta')) {
     registrarEvento({
       proyectoCodigo: existente.proyecto,
-      accion: 'observacion_resuelta',
+      accion: datos.estado === 'resuelta' ? 'observacion_resuelta' : 'observacion_estado_cambiado',
       usuario: USUARIO_ACTUAL,
-      descripcion: `Observación ${existente.codigo} · ${existente.partida} resuelta`,
+      descripcion: `Observación ${existente.codigo} · ${existente.partida} cambiada de "${ESTADO_LABEL[existente.estado]}" a "${ESTADO_LABEL[datos.estado]}"`,
     })
-    agregarNotificacion({
-      tipo: 'observacion_resuelta',
-      titulo: 'Observación resuelta',
-      descripcion: `${existente.codigo} · ${existente.partida} fue marcada como resuelta.`,
-      ruta: `/observaciones?obs=${existente.id}`,
+    if (datos.estado === 'resuelta') {
+      agregarNotificacion({
+        tipo: 'observacion_resuelta',
+        titulo: 'Observación resuelta',
+        descripcion: `${existente.codigo} · ${existente.partida} fue marcada como resuelta.`,
+        ruta: `/observaciones?obs=${existente.id}`,
+      })
+    }
+  }
+
+  if (datos.responsable && datos.responsable !== existente.responsable) {
+    registrarEvento({
+      proyectoCodigo: existente.proyecto,
+      accion: 'observacion_asignada',
+      usuario: USUARIO_ACTUAL,
+      descripcion: `Observación ${existente.codigo} · ${existente.partida} reasignada a ${datos.responsable} (era ${existente.responsable})`,
     })
   }
 }
 
 export function eliminarObservacion(id: string) {
   escribir(leer().filter((o) => o.id !== id))
+}
+
+export function eliminarObservacionesDeProyecto(codigo: string) {
+  escribir(leer().filter((o) => o.proyecto !== codigo))
 }
 
 export function generarObservacionesSimuladas(

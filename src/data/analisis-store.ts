@@ -113,6 +113,15 @@ export function registrarEjecucion(proyectoId: string) {
   })
 }
 
+export function eliminarEjecucion(proyectoId: string) {
+  const ejecuciones = leerEjecuciones()
+  if (ejecuciones[proyectoId]) {
+    delete ejecuciones[proyectoId]
+    escribirEjecuciones()
+    recalcular()
+  }
+}
+
 function fechaEjecucion(proyectoId: string): string | undefined {
   return leerEjecuciones()[proyectoId]
 }
@@ -238,11 +247,17 @@ function recalcular() {
   listenersAnalisis.forEach((l) => l())
 }
 
-suscribirProyectos(recalcular)
-suscribirObservaciones(recalcular)
-suscribirDocumentos(recalcular)
+let suscripcionesRegistradas = false
+function asegurarSuscripciones() {
+  if (suscripcionesRegistradas) return
+  suscripcionesRegistradas = true
+  suscribirProyectos(recalcular)
+  suscribirObservaciones(recalcular)
+  suscribirDocumentos(recalcular)
+}
 
 function suscribirAnalisis(listener: () => void) {
+  asegurarSuscripciones()
   listenersAnalisis.add(listener)
   return () => {
     listenersAnalisis.delete(listener)
@@ -250,6 +265,7 @@ function suscribirAnalisis(listener: () => void) {
 }
 
 function snapshot(): RegistroAnalisis[] {
+  asegurarSuscripciones()
   if (!cache) {
     cache = obtenerProyectos().map(calcularRegistro)
   }

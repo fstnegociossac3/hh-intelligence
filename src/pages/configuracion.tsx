@@ -14,20 +14,12 @@ import {
   Sun,
   SunMoon,
   Table2,
-  User,
-  UserRound,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { z } from 'zod'
-import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -38,19 +30,12 @@ import {
 } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { FadeIn } from '@/components/ui/motion'
-import { ESPECIALIDADES } from '@/data/proyecto-detalle'
+import { notificarConfiguracionCambiada } from '@/data/configuracion-store'
 import { cn } from '@/utils/cn'
 
 const ESQUEMA_CLAVE = 'hh-config'
 
 type Tema = 'claro' | 'oscuro' | 'sistema'
-
-const ROLES_PERFIL = [
-  { id: 'administrador', nombre: 'Administrador' },
-  { id: 'jefe_proyecto', nombre: 'Jefe de Proyecto' },
-  { id: 'especialista', nombre: 'Especialista Técnico' },
-  { id: 'revisor', nombre: 'Revisor' },
-] as const
 
 const TEMAS: { id: Tema; nombre: string; icono: LucideIcon }[] = [
   { id: 'claro', nombre: 'Claro', icono: Sun },
@@ -115,6 +100,7 @@ function guardarConfig(config: ConfigPersistida) {
   } catch {
     /* almacenamiento no disponible */
   }
+  notificarConfiguracionCambiada()
 }
 
 function detectarSistema(): boolean {
@@ -124,24 +110,6 @@ function detectarSistema(): boolean {
 function aplicarTema(tema: Tema) {
   const oscuro = tema === 'oscuro' || (tema === 'sistema' && detectarSistema())
   document.documentElement.classList.toggle('dark', oscuro)
-}
-
-const perfilSchema = z.object({
-  nombres: z.string().min(2, 'Ingresa al menos 2 caracteres'),
-  apellidos: z.string().min(2, 'Ingresa al menos 2 caracteres'),
-  correo: z.string().email('Ingresa un correo válido'),
-  rol: z.string().min(1, 'Selecciona un rol'),
-  especialidad: z.string(),
-})
-
-type PerfilFormValues = z.infer<typeof perfilSchema>
-
-const PERFIL_DEF: PerfilFormValues = {
-  nombres: 'María Fernanda',
-  apellidos: 'Quispe Rojas',
-  correo: 'maria.quispe@empresa.pe',
-  rol: 'jefe_proyecto',
-  especialidad: ESPECIALIDADES[0] ?? '',
 }
 
 export function ConfiguracionPage() {
@@ -181,22 +149,17 @@ export function ConfiguracionPage() {
             Configuración
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Administra tu perfil, apariencia, notificaciones y preferencias del sistema.
+            Administra la apariencia, notificaciones y preferencias del sistema.
           </p>
         </div>
       </FadeIn>
 
-      <Tabs defaultValue="perfil" className="w-full">
+      <Tabs defaultValue="apariencia" className="w-full">
         <TabsList className="flex w-full justify-start gap-1 overflow-x-auto sm:inline-flex">
-          <TabsTrigger value="perfil"><User className="h-4 w-4" /> Perfil</TabsTrigger>
           <TabsTrigger value="apariencia"><Palette className="h-4 w-4" /> Apariencia</TabsTrigger>
           <TabsTrigger value="notificaciones"><Bell className="h-4 w-4" /> Notificaciones</TabsTrigger>
           <TabsTrigger value="preferencias"><SlidersHorizontal className="h-4 w-4" /> Preferencias</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="perfil">
-          <PerfilTab />
-        </TabsContent>
 
         <TabsContent value="apariencia">
           <AparienciaTab config={config} onActualizar={actualizar} />
@@ -211,118 +174,6 @@ export function ConfiguracionPage() {
         </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-function PerfilTab() {
-  const {
-    register,
-    handleSubmit,
-    setValue,
-    watch,
-    formState: { errors },
-  } = useForm<PerfilFormValues>({
-    resolver: zodResolver(perfilSchema),
-    defaultValues: PERFIL_DEF,
-  })
-
-  const rol = watch('rol')
-  const especialidad = watch('especialidad')
-
-  const onGuardar = (valores: PerfilFormValues) => {
-    toast.success('Perfil actualizado', {
-      description: `${valores.nombres} ${valores.apellidos}.`,
-    })
-  }
-
-  return (
-    <form onSubmit={handleSubmit(onGuardar)} className="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <UserRound className="h-4 w-4 text-primary" />
-            Información personal
-          </CardTitle>
-          <CardDescription>
-            Datos que se muestran en tu perfil y en el sistema.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="flex items-center gap-4">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 text-3xl font-semibold text-primary">
-              MQ
-            </div>
-            <div className="text-sm">
-              <p className="font-medium">Avatar</p>
-              <p className="text-muted-foreground">Imagen de perfil (simulada).</p>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="nombres">Nombre</Label>
-              <Input id="nombres" placeholder="Nombres" {...register('nombres')} />
-              {errors.nombres && (
-                <p className="text-xs text-destructive">{errors.nombres.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="apellidos">Apellidos</Label>
-              <Input id="apellidos" placeholder="Apellidos" {...register('apellidos')} />
-              {errors.apellidos && (
-                <p className="text-xs text-destructive">{errors.apellidos.message}</p>
-              )}
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="correo">Correo</Label>
-            <Input id="correo" type="email" placeholder="correo@empresa.pe" {...register('correo')} />
-            {errors.correo && (
-              <p className="text-xs text-destructive">{errors.correo.message}</p>
-            )}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>Rol</Label>
-              <Select value={rol} onValueChange={(v) => setValue('rol', v, { shouldValidate: true })}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecciona un rol" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLES_PERFIL.map((r) => (
-                    <SelectItem key={r.id} value={r.id}>{r.nombre}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {errors.rol && (
-                <p className="text-xs text-destructive">{errors.rol.message}</p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label>Especialidad</Label>
-              <Select value={especialidad} onValueChange={(v) => setValue('especialidad', v)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Selecciona una especialidad" />
-                </SelectTrigger>
-                <SelectContent>
-                  {ESPECIALIDADES.map((e) => (
-                    <SelectItem key={e} value={e}>{e}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div className="flex justify-end">
-        <Button type="submit" className="gap-1.5">
-          Guardar perfil
-        </Button>
-      </div>
-    </form>
   )
 }
 
@@ -359,12 +210,6 @@ function OpcionSeleccion(
 }
 
 function AparienciaTab({ config, onActualizar }: { config: ConfigPersistida; onActualizar: (p: Partial<ConfigPersistida>) => void }) {
-  const guardar = () => {
-    toast.success('Apariencia actualizada', {
-      description: 'El tema y la densidad se aplicaron y guardaron.',
-    })
-  }
-
   return (
     <div className="space-y-6">
       <Card>
@@ -400,12 +245,6 @@ function AparienciaTab({ config, onActualizar }: { config: ConfigPersistida; onA
           />
         </CardContent>
       </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={guardar} className="gap-1.5">
-          Guardar apariencia
-        </Button>
-      </div>
     </div>
   )
 }
@@ -414,12 +253,6 @@ function NotificacionesTab({ config, onActualizar }: { config: ConfigPersistida;
   const activar = (id: string, valor: boolean) => {
     onActualizar({
       notificaciones: { ...config.notificaciones, [id]: valor },
-    })
-  }
-
-  const guardar = () => {
-    toast.success('Notificaciones actualizadas', {
-      description: 'Tus preferencias de notificación se guardaron.',
     })
   }
 
@@ -457,23 +290,11 @@ function NotificacionesTab({ config, onActualizar }: { config: ConfigPersistida;
           ))}
         </CardContent>
       </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={guardar} className="gap-1.5">
-          Guardar notificaciones
-        </Button>
-      </div>
     </div>
   )
 }
 
 function PreferenciasTab({ config, onActualizar }: { config: ConfigPersistida; onActualizar: (p: Partial<ConfigPersistida>) => void }) {
-  const guardar = () => {
-    toast.success('Preferencias guardadas', {
-      description: 'Tus preferencias generales se aplicaron.',
-    })
-  }
-
   return (
     <div className="space-y-6">
       <Card>
@@ -555,12 +376,6 @@ function PreferenciasTab({ config, onActualizar }: { config: ConfigPersistida; o
           </label>
         </CardContent>
       </Card>
-
-      <div className="flex justify-end">
-        <Button onClick={guardar} className="gap-1.5">
-          Guardar preferencias
-        </Button>
-      </div>
     </div>
   )
 }

@@ -15,6 +15,12 @@ import { UsuariosPage } from '@/pages/usuarios'
 import { ConfiguracionPage } from '@/pages/configuracion'
 import { PerfilPage } from '@/pages/perfil'
 import { NotFoundPage } from '@/pages/not-found'
+import { useConfiguracion, rutaPaginaInicio } from '@/data/configuracion-store'
+
+function RedirigirInicio() {
+  useConfiguracion()
+  return <Navigate to={rutaPaginaInicio()} replace />
+}
 
 export function App() {
   return (
@@ -41,7 +47,7 @@ export function App() {
           <Route path="/configuracion" element={<ConfiguracionPage />} />
         </Route>
 
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<RedirigirInicio />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
 

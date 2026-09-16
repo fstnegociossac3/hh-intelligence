@@ -41,7 +41,11 @@ function leerRegistro(): RegistroDocumentos {
 }
 
 function escribirRegistro(registro: RegistroDocumentos) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(registro))
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(registro))
+  } catch {
+    // Si localStorage no está disponible no se persiste.
+  }
 }
 
 function seedProyecto(proyectoId: string): EstadoDocumentos {
@@ -77,6 +81,15 @@ export function guardarEstadoDocumentos(
   }
   escribirRegistro(registro)
   notificar()
+}
+
+export function eliminarDocumentos(proyectoId: string) {
+  const registro = leerRegistro()
+  if (registro[proyectoId]) {
+    delete registro[proyectoId]
+    escribirRegistro(registro)
+    notificar()
+  }
 }
 
 export function procesarDocumentosIa(proyectoId: string): number {

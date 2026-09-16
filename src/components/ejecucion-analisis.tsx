@@ -8,6 +8,7 @@ import {
   Loader2,
   ScanSearch,
   Sparkles,
+  Square,
   TriangleAlert,
 } from 'lucide-react'
 
@@ -20,6 +21,7 @@ import {
 } from '@/utils/estados-clases'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { Progress } from '@/components/ui/progress'
 import { procesarDocumentosIa } from '@/data/documentos-store'
 import { generarObservacionesSimuladas } from '@/data/observaciones-store'
@@ -95,20 +97,32 @@ export function EjecucionAnalisis({
   proyectos,
   activo,
   onFinalizado,
+  onCancelado,
 }: {
   proyectos: ProyectoEjecucion[]
   activo: boolean
   onFinalizado?: (resumen: ResumenEjecucion) => void
+  onCancelado?: () => void
 }) {
   const [etapa, setEtapa] = useState(0)
   const [progreso, setProgreso] = useState(0)
   const [proyectoActual, setProyectoActual] = useState<string | null>(null)
   const [finalizado, setFinalizado] = useState(false)
+  const [canceladoUi, setCanceladoUi] = useState(false)
   const [resumen, setResumen] = useState<ResumenEjecucion | null>(null)
   const cancelado = useRef(false)
   const timers = useRef<number[]>([])
   const onFinalizadoRef = useRef(onFinalizado)
   onFinalizadoRef.current = onFinalizado
+
+  const cancelar = () => {
+    cancelado.current = true
+    timers.current.forEach(clearTimeout)
+    timers.current = []
+    setCanceladoUi(true)
+    setProyectoActual(null)
+    onCancelado?.()
+  }
 
   const duracionTotal = useMemo(
     () =>
@@ -128,6 +142,7 @@ export function EjecucionAnalisis({
     setProgreso(0)
     setProyectoActual(null)
     setFinalizado(false)
+    setCanceladoUi(false)
     setResumen(null)
 
     const inicio = Date.now()
@@ -222,24 +237,47 @@ export function EjecucionAnalisis({
               Análisis inteligente en curso
             </h3>
             <p className="text-sm text-muted-foreground">
-              {finalizado
-                ? 'Ejecución completada. Resultados guardados en el sistema.'
-                : `Etapa ${etapa + 1} de ${ETAPAS.length} · ${etapaActual.titulo}`}
+              {canceladoUi
+                ? 'Ejecución cancelada. Las etapas completadas se conservan en el sistema.'
+                : finalizado
+                  ? 'Ejecución completada. Resultados guardados en el sistema.'
+                  : `Etapa ${etapa + 1} de ${ETAPAS.length} · ${etapaActual.titulo}`}
             </p>
           </div>
-          {finalizado ? (
-            <Badge variant="outline" className={cn('gap-1.5', ESTADO_OK)}>
-              <CircleCheck className="h-3.5 w-3.5" />
-              Completado
-            </Badge>
-          ) : (
-            <Badge
-              variant="outline"
-              className="border-transparent bg-info/10 text-info"
-            >
-              En ejecución…
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            {!finalizado && !canceladoUi && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={cancelar}
+                className="gap-1.5 text-muted-foreground"
+              >
+                <Square className="h-3.5 w-3.5" />
+                Cancelar
+              </Button>
+            )}
+            {canceladoUi ? (
+              <Badge
+                variant="outline"
+                className={cn('gap-1.5', ESTADO_WARNING)}
+              >
+                <Square className="h-3.5 w-3.5" />
+                Cancelado
+              </Badge>
+            ) : finalizado ? (
+              <Badge variant="outline" className={cn('gap-1.5', ESTADO_OK)}>
+                <CircleCheck className="h-3.5 w-3.5" />
+                Completado
+              </Badge>
+            ) : (
+              <Badge
+                variant="outline"
+                className="border-transparent bg-info/10 text-info"
+              >
+                En ejecución…
+              </Badge>
+            )}
+          </div>
         </div>
 
         <div className="mt-4">

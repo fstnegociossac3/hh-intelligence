@@ -10,6 +10,8 @@ export type AccionHistorial =
   | 'analisis_ejecutado'
   | 'observacion_creada'
   | 'observacion_resuelta'
+  | 'observacion_estado_cambiado'
+  | 'observacion_asignada'
   | 'reanalisis_ejecutado'
   | 'reporte_generado'
 
@@ -88,6 +90,10 @@ export function obtenerHistorial(): EventoHistorial[] {
 
 export function historialDeProyecto(proyectoId: string): EventoHistorial[] {
   return leer().filter((e) => e.proyectoId === proyectoId)
+}
+
+export function eliminarHistorialDeProyecto(proyectoId: string) {
+  escribir(leer().filter((e) => e.proyectoId !== proyectoId))
 }
 
 export function proyectoIdDeCodigo(codigo: string): string {

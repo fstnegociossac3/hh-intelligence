@@ -1,6 +1,12 @@
 import { useSyncExternalStore } from 'react'
 
 import { proyectos as datosProyectos } from '@/data/proyectos'
+import { eliminarDocumentos } from '@/data/documentos-store'
+import { eliminarEquipo, equipoDesdeProyecto, guardarEquipo } from '@/data/equipo-store'
+import { eliminarObservacionesDeProyecto } from '@/data/observaciones-store'
+import { eliminarHistorialDeProyecto } from '@/data/historial-store'
+import { eliminarEjecucion } from '@/data/analisis-store'
+import { eliminarNotificacionesDeProyecto } from '@/data/notificaciones-store'
 import type { Proyecto, ProyectoEstado } from '@/types'
 
 const STORAGE_KEY = 'hh-intelligence:proyectos'
@@ -57,6 +63,7 @@ export function guardarProyectos(proyectos: Proyecto[]) {
 
 export function crearProyecto(proyecto: Proyecto) {
   escribir([proyecto, ...leer()])
+  guardarEquipo(proyecto.id, equipoDesdeProyecto(proyecto))
 }
 
 export function actualizarProyecto(id: string, datos: Partial<Proyecto>) {
@@ -64,7 +71,15 @@ export function actualizarProyecto(id: string, datos: Partial<Proyecto>) {
 }
 
 export function eliminarProyecto(id: string) {
+  const proyecto = leer().find((p) => p.id === id)
   escribir(leer().filter((p) => p.id !== id))
+  if (!proyecto) return
+  eliminarDocumentos(proyecto.id)
+  eliminarEquipo(proyecto.id)
+  eliminarObservacionesDeProyecto(proyecto.codigo)
+  eliminarHistorialDeProyecto(proyecto.id)
+  eliminarEjecucion(proyecto.id)
+  eliminarNotificacionesDeProyecto(proyecto.id, proyecto.codigo)
 }
 
 export function duplicarProyecto(proyecto: Proyecto): Proyecto {

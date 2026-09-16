@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   flexRender,
   getCoreRowModel,
@@ -15,6 +15,7 @@ import {
   ChevronRight,
   CheckCircle2,
   FilePlus2,
+  FolderKanban,
   GitCompare,
   HandCoins,
   Layers3,
@@ -30,6 +31,10 @@ import type { LucideIcon } from 'lucide-react'
 
 import { cn } from '@/utils/cn'
 import { ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
+import { useProyectos } from '@/data/proyectos-store'
+import { useObservaciones } from '@/data/observaciones-store'
+import { obtenerEstadoDocumentos } from '@/data/documentos-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -106,6 +111,8 @@ const DOCUMENTOS: DocumentoTipo[] = [
   { id: 'cronograma', nombre: 'Cronograma de Ejecución', icono: Table2 },
 ]
 
+const FILAS_POR_PAGINA = [6, 10, 15, 20]
+
 const CRITICIDAD_LABEL: Record<Criticidad, string> = {
   baja: 'Baja',
   media: 'Media',
@@ -132,179 +139,99 @@ const ESTADO_ICONO: Record<EstadoCampo, LucideIcon> = {
   faltante: EyeOff,
 }
 
-const CONFIGS: ConfigTipo[] = [
-  {
-    id: 'presupuesto_metrado',
-    nombre: 'Presupuesto vs. Metrado',
-    docA: 'presupuesto',
-    docB: 'metrado',
-    filas: [
-      {
-        codigo: '01.01',
-        partida: 'Excavación para cimentaciones',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'cant', campo: 'Cantidad', valorA: '420.00', valorB: '380.00', diferencia: '-40.00 (9.5%)', estado: 'diferencia', criticidad: 'alta' },
-          { id: 'unid', campo: 'Unidad', valorA: 'M3', valorB: 'M3', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'desc', campo: 'Descripción', valorA: 'Excavación en suelo natural', valorB: 'Excavación en suelo natural', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-        ],
-      },
-      {
-        codigo: '01.02',
-        partida: 'Falso piso de concreto',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'cant', campo: 'Cantidad', valorA: '1,800.00', valorB: '1,650.00', diferencia: '-150.00 (8.3%)', estado: 'diferencia', criticidad: 'media' },
-          { id: 'unid', campo: 'Unidad', valorA: 'M2', valorB: 'M2', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'desc', campo: 'Descripción', valorA: 'e=0.10 m', valorB: '—', diferencia: 'Falta especificación de espesor', estado: 'faltante', criticidad: 'media' },
-        ],
-      },
-      {
-        codigo: '01.03',
-        partida: 'Acero de refuerzo f\'y=4200 kg/cm2',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'cant', campo: 'Cantidad', valorA: '12,500.00', valorB: '12,500.00', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'unid', campo: 'Unidad', valorA: 'KG', valorB: 'KG', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'desc', campo: 'Descripción', valorA: 'Grado 60', valorB: 'Grado 60', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-        ],
-      },
-      {
-        codigo: '01.04',
-        partida: 'Encofrado y desencofrado',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'cant', campo: 'Cantidad', valorA: '2,400.00', valorB: '—', diferencia: 'Falta cantidad en metrado', estado: 'faltante', criticidad: 'critica' },
-          { id: 'unid', campo: 'Unidad', valorA: 'M2', valorB: '—', diferencia: 'Sin unidad', estado: 'faltante', criticidad: 'media' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'metrado_plano',
-    nombre: 'Metrado vs. Plano',
-    docA: 'metrado',
-    docB: 'plano',
-    filas: [
-      {
-        codigo: '02.01',
-        partida: 'Zapatas Z-1',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'area', campo: 'Área (M2)', valorA: '6.00', valorB: '6.00', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'peso', campo: 'Peso acero (KG)', valorA: '180.00', valorB: '180.00', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'desc', campo: 'Descripción', valorA: 'Z-1 2.00x3.00', valorB: 'Z-1 2.00x3.00', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-        ],
-      },
-      {
-        codigo: '02.02',
-        partida: 'Columnas C-1 piso 1',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'area', campo: 'Área (M2)', valorA: '1.20', valorB: '1.20', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'peso', campo: 'Peso acero (KG)', valorA: '320.00', valorB: '280.00', diferencia: '-40.00 (12.5%)', estado: 'diferencia', criticidad: 'alta' },
-          { id: 'desc', campo: 'Descripción', valorA: 'C-1 0.30x0.40', valorB: 'C-1 0.30x0.40', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-        ],
-      },
-      {
-        codigo: '02.03',
-        partida: 'Vigas V-1 nivel 2',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'area', campo: 'Área (M2)', valorA: '4.20', valorB: '4.20', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'peso', campo: 'Peso acero (KG)', valorA: '540.00', valorB: '—', diferencia: 'Falta detalle en plano', estado: 'faltante', criticidad: 'media' },
-        ],
-      },
-      {
-        codigo: '02.04',
-        partida: 'Losas aligeradas',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'area', campo: 'Área (M2)', valorA: '—', valorB: '520.00', diferencia: 'Falta metrado', estado: 'faltante', criticidad: 'critica' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'partida_especificacion',
-    nombre: 'Partida vs. Especificación',
-    docA: 'presupuesto',
-    docB: 'especificacion',
-    filas: [
-      {
-        codigo: '03.01',
-        partida: 'Concreto f\'c=210 kg/cm2',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'desc', campo: 'Descripción', valorA: 'Concreto estructural', valorB: 'Concreto estructural', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'norma', campo: 'Norma', valorA: 'E.060', valorB: 'E.060', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'material', campo: 'Material', valorA: '—', valorB: 'Cemento Tipo I', diferencia: 'Falta material en partida', estado: 'faltante', criticidad: 'media' },
-        ],
-      },
-      {
-        codigo: '03.02',
-        partida: 'Acero estructural A-36',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'desc', campo: 'Descripción', valorA: 'Acero grado 60', valorB: 'GA60 / ASTM', diferencia: 'Alcance parcial de la especificación', estado: 'diferencia', criticidad: 'alta' },
-          { id: 'norma', campo: 'Norma', valorA: 'E.060 / ASTM', valorB: 'ASTM A615', diferencia: 'Norma incompleta', estado: 'diferencia', criticidad: 'media' },
-        ],
-      },
-      {
-        codigo: '03.03',
-        partida: 'Tabiquería de ladrillo',
-        especialidad: 'Arquitectura',
-        campos: [
-          { id: 'desc', campo: 'Descripción', valorA: 'Muro de 0.15', valorB: 'Muro de 0.15', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'material', campo: 'Material', valorA: 'Ladrillo KK 18', valorB: 'Ladrillo KK 18', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'partida_cronograma',
-    nombre: 'Partida vs. Cronograma',
-    docA: 'presupuesto',
-    docB: 'cronograma',
-    filas: [
-      {
-        codigo: '04.01',
-        partida: 'Excavación para cimentaciones',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'inicio', campo: 'Fecha inicio', valorA: '2026-03-15', valorB: '2026-03-15', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'fin', campo: 'Fecha fin', valorA: '2026-04-20', valorB: '2026-04-20', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'duracion', campo: 'Duración (días)', valorA: '36', valorB: '36', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-        ],
-      },
-      {
-        codigo: '04.02',
-        partida: 'Concreto f\'c=210 kg/cm2',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'inicio', campo: 'Fecha inicio', valorA: '2026-05-01', valorB: '2026-05-01', diferencia: '—', estado: 'coincide', criticidad: 'baja' },
-          { id: 'fin', campo: 'Fecha fin', valorA: '2026-07-30', valorB: '2026-08-10', diferencia: '+11 días de desfase', estado: 'diferencia', criticidad: 'alta' },
-          { id: 'duracion', campo: 'Duración (días)', valorA: '90', valorB: '101', diferencia: '+11 días', estado: 'diferencia', criticidad: 'media' },
-        ],
-      },
-      {
-        codigo: '04.03',
-        partida: 'Acero de refuerzo',
-        especialidad: 'Estructuras',
-        campos: [
-          { id: 'inicio', campo: 'Fecha inicio', valorA: '2026-04-01', valorB: '—', diferencia: 'Actividad no programada', estado: 'faltante', criticidad: 'critica' },
-        ],
-      },
-    ],
-  },
-]
+const CATEGORIA_AL_ID: Record<string, IdDoc> = {
+  Presupuesto: 'presupuesto',
+  Metrados: 'metrado',
+  Planos: 'plano',
+  'Especificaciones técnicas': 'especificacion',
+  Cronograma: 'cronograma',
+}
+
+const REGLA_AL_TIPO: Record<string, IdTipo> = {
+  'Presupuesto vs. Metrado': 'presupuesto_metrado',
+  'Metrado vs. Plano': 'metrado_plano',
+  'Partida vs. Especificación': 'partida_especificacion',
+  'Partida vs. Cronograma': 'partida_cronograma',
+}
+
+const CONFIG_POR_TIPO: Record<IdTipo, { nombre: string; docA: IdDoc; docB: IdDoc }> = {
+  presupuesto_metrado: { nombre: 'Presupuesto vs. Metrado', docA: 'presupuesto', docB: 'metrado' },
+  metrado_plano: { nombre: 'Metrado vs. Plano', docA: 'metrado', docB: 'plano' },
+  partida_especificacion: { nombre: 'Partida vs. Especificación', docA: 'presupuesto', docB: 'especificacion' },
+  partida_cronograma: { nombre: 'Partida vs. Cronograma', docA: 'presupuesto', docB: 'cronograma' },
+}
+
+interface PlantillaCampo {
+  campo: string
+  valorA: string
+  valorB: string
+  diferencia: string
+  estado: EstadoCampo
+}
+
+const CAMPO_POR_INCONSISTENCIA: Record<string, string> = {
+  'Diferencia de cantidad': 'Cantidad',
+  'Coincidencia parcial con plano': 'Geometría',
+  'Información faltante': 'Información',
+  'Unidad inconsistente': 'Unidad',
+  'Especificación parcial': 'Especificación',
+  'Diferencia de unidad': 'Unidad',
+  'Cantidad sin respaldo': 'Cantidad',
+  'Actividad no programada': 'Programación',
+}
+
+const TIPO_FALTANTE = new Set([
+  'Información faltante',
+  'Cantidad sin respaldo',
+  'Actividad no programada',
+])
+
+function campoParaObservacion(
+  o: { id: string; partida: string; tipoInconsistencia: string },
+): PlantillaCampo {
+  let semilla = 0
+  for (let i = 0; i < o.id.length; i++) {
+    semilla = (semilla * 31 + o.id.charCodeAt(i)) >>> 0
+  }
+  for (let i = 0; i < o.partida.length; i++) {
+    semilla = (semilla * 31 + o.partida.charCodeAt(i)) >>> 0
+  }
+
+  const cantidad = 120 + (semilla % 4400)
+  const delta = 8 + (semilla % Math.max(1, Math.round(cantidad * 0.18)))
+  const esFaltante = TIPO_FALTANTE.has(o.tipoInconsistencia)
+  const esUnidad = o.tipoInconsistencia === 'Diferencia de unidad'
+  const valorB = esFaltante
+    ? '—'
+    : esUnidad
+      ? 'M2'
+      : `${(cantidad - delta).toFixed(2)}`
+  const diferencia = esFaltante
+    ? 'Sin dato en fuente B'
+    : esUnidad
+      ? 'Unidades no coincidentes'
+      : `-${delta.toFixed(2)} (${((delta / cantidad) * 100).toFixed(1)}%)`
+
+  return {
+    campo: CAMPO_POR_INCONSISTENCIA[o.tipoInconsistencia] ?? 'Detalle',
+    valorA: esUnidad ? 'M3' : `${cantidad.toFixed(2)}`,
+    valorB,
+    diferencia,
+    estado: esFaltante
+      ? 'faltante'
+      : esUnidad
+        ? 'diferencia'
+        : 'diferencia',
+  }
+}
 
 interface PanelDocProps {
   doc: DocumentoTipo
   fila: FilaComparada
+  lado: 'a' | 'b'
 }
 
-function PanelDoc({ doc, fila }: PanelDocProps) {
+function PanelDoc({ doc, fila, lado }: PanelDocProps) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between gap-3 space-y-0 pb-3">
@@ -322,7 +249,7 @@ function PanelDoc({ doc, fila }: PanelDocProps) {
           >
             <span className="text-muted-foreground">{c.campo}</span>
             <span className="text-right font-medium tabular-nums">
-              {c.valorA === '—' ? '—' : c.valorA}
+              {lado === 'a' ? (c.valorA === '—' ? '—' : c.valorA) : c.valorB === '—' ? '—' : c.valorB}
             </span>
           </div>
         ))}
@@ -332,26 +259,87 @@ function PanelDoc({ doc, fila }: PanelDocProps) {
 }
 
 export function ComparadorPage() {
+  const proyectos = useProyectos()
+  const observaciones = useObservaciones()
+  const [proyectoId, setProyectoId] = useState(proyectos[0]?.id ?? '')
   const [idDocA, setIdDocA] = useState<IdDoc>('presupuesto')
   const [idDocB, setIdDocB] = useState<IdDoc>('metrado')
   const [busqueda, setBusqueda] = useState('')
   const [sorting, setSorting] = useState<SortingState>([])
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [filtroCriticidad, setFiltroCriticidad] = useState('todas')
   const [diffIndex, setDiffIndex] = useState(0)
   const filaRef = useRef<HTMLDivElement | null>(null)
 
+  const proyecto = proyectos.find((p) => p.id === proyectoId) ?? proyectos[0]
+
+  const documentosDisponibles = useMemo(() => {
+    if (!proyecto) return []
+    const estadoDocs = obtenerEstadoDocumentos(proyecto.id)
+    const presentes = new Set<IdDoc>()
+    for (const d of estadoDocs.documentos) {
+      const id = CATEGORIA_AL_ID[d.categoria]
+      if (id) presentes.add(id)
+    }
+    return DOCUMENTOS.filter((d) => presentes.has(d.id))
+  }, [proyecto])
+
+  const configs = useMemo<ConfigTipo[]>(() => {
+    if (!proyecto) return []
+    const deProyecto = observaciones.filter(
+      (o) => o.proyecto === proyecto.codigo && o.regla in REGLA_AL_TIPO,
+    )
+    return (Object.keys(CONFIG_POR_TIPO) as IdTipo[]).map((tipo) => {
+      const info = CONFIG_POR_TIPO[tipo]
+      const filas: FilaComparada[] = deProyecto
+        .filter((o) => REGLA_AL_TIPO[o.regla] === tipo)
+        .map((o) => {
+          const valores = campoParaObservacion(o)
+          const campo: CampoComparado = {
+            id: o.id,
+            campo: valores.campo,
+            valorA: valores.valorA,
+            valorB: valores.valorB,
+            diferencia: valores.diferencia,
+            estado: valores.estado,
+            criticidad: o.criticidad,
+          }
+          return {
+            codigo: o.codigo,
+            partida: o.partida,
+            especialidad: '',
+            campos: [campo],
+          }
+        })
+      return { id: tipo, nombre: info.nombre, docA: info.docA, docB: info.docB, filas }
+    })
+  }, [proyecto, observaciones])
+
   const config = useMemo(() => {
-    return CONFIGS.find(
+    return configs.find(
       (c) =>
         (c.docA === idDocA && c.docB === idDocB) ||
         (c.docA === idDocB && c.docB === idDocA),
     ) ?? null
-  }, [idDocA, idDocB])
+  }, [configs, idDocA, idDocB])
+
+  useEffect(() => {
+    const ids = documentosDisponibles.map((d) => d.id)
+    if (!ids.includes(idDocA)) setIdDocA(ids[0] ?? 'presupuesto')
+    if (!ids.includes(idDocB)) setIdDocB(ids[1] ?? ids[0] ?? 'metrado')
+  }, [documentosDisponibles, idDocA, idDocB])
+
+  useEffect(() => {
+    setDiffIndex(0)
+    setBusqueda('')
+    setPaginacion((prev) => ({ ...prev, pageIndex: 0 }))
+  }, [proyectoId, idDocA, idDocB, filtroCriticidad])
 
   const invertido = config ? config.docA === idDocB : false
 
-  const docA = DOCUMENTOS.find((d) => d.id === idDocA)!
-  const docB = DOCUMENTOS.find((d) => d.id === idDocB)!
+  const docA = DOCUMENTOS.find((d) => d.id === idDocA) ?? DOCUMENTOS[0]
+  const docB = DOCUMENTOS.find((d) => d.id === idDocB) ?? DOCUMENTOS[1]
 
   const filasFiltradas = useMemo(() => {
     if (!config) return []
@@ -359,8 +347,6 @@ export function ComparadorPage() {
       f.partida.toLowerCase().includes(busqueda.toLowerCase()),
     )
   }, [config, busqueda])
-
-  const filaSeleccionada = filasFiltradas[0]
 
   const diferencias = useMemo(() => {
     if (!config) return []
@@ -374,6 +360,11 @@ export function ComparadorPage() {
   }, [config, filasFiltradas, filtroCriticidad])
 
   const diffActual = diferencias[diffIndex] ?? null
+
+  const filaSeleccionada = useMemo(() => {
+    if (!diffActual) return filasFiltradas[0]
+    return filasFiltradas.find((f) => f.campos.some((c) => c.id === diffActual.id)) ?? filasFiltradas[0]
+  }, [filasFiltradas, diffActual])
 
   const columnas = useMemo<ColumnDef<(typeof diferencias)[number]>[]>(
     () => [
@@ -449,20 +440,31 @@ export function ComparadorPage() {
   const table = useReactTable({
     data: diferencias,
     columns: columnas,
-    state: { sorting },
+    state: { sorting, pagination: paginacion },
     onSortingChange: setSorting,
+    onPaginationChange: setPaginacion,
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
-    initialState: { pagination: { pageSize: 6 } },
   })
+
+  const totalPaginas = table.getPageCount()
+  const primera = paginacion.pageIndex * paginacion.pageSize + 1
+  const ultima = Math.min(
+    (paginacion.pageIndex + 1) * paginacion.pageSize,
+    table.getFilteredRowModel().rows.length,
+  )
 
   function irADiferencia(idx: number) {
     const n = diferencias.length
     if (n === 0) return
     const next = ((idx % n) + n) % n
     setDiffIndex(next)
+    setPaginacion((prev) => ({
+      ...prev,
+      pageIndex: Math.floor(next / prev.pageSize),
+    }))
     filaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
@@ -471,6 +473,24 @@ export function ComparadorPage() {
   return (
     <div className="space-y-6">
       <FadeIn>
+        <div className="mb-4">
+          <label className="mb-1.5 flex items-center gap-2 text-sm font-medium">
+            <FolderKanban className="h-4 w-4 text-primary" />
+            Proyecto
+          </label>
+          <Select value={proyecto?.id ?? ''} onValueChange={(v) => setProyectoId(v)}>
+            <SelectTrigger aria-label="Proyecto">
+              <SelectValue placeholder="Selecciona un proyecto" />
+            </SelectTrigger>
+            <SelectContent>
+              {proyectos.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.codigo} · {p.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="mb-1.5 flex items-center gap-2 text-sm font-medium">
@@ -482,7 +502,7 @@ export function ComparadorPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DOCUMENTOS.map((d) => (
+                {documentosDisponibles.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
                     {d.nombre}
                   </SelectItem>
@@ -500,7 +520,7 @@ export function ComparadorPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {DOCUMENTOS.map((d) => (
+                {documentosDisponibles.map((d) => (
                   <SelectItem key={d.id} value={d.id}>
                     {d.nombre}
                   </SelectItem>
@@ -511,7 +531,13 @@ export function ComparadorPage() {
         </div>
       </FadeIn>
 
-      {!config ? (
+      {!proyecto ? (
+        <EmptyState
+          icono={FolderKanban}
+          titulo="Sin proyectos"
+          descripcion="No hay proyectos registrados para comparar. Crea un proyecto primero."
+        />
+      ) : !config ? (
         <EmptyState
           icono={GitCompare}
           titulo="Combinación no soportada"
@@ -553,12 +579,12 @@ export function ComparadorPage() {
                   <TabsTrigger value="a">Documento A</TabsTrigger>
                   <TabsTrigger value="b">Documento B</TabsTrigger>
                 </TabsList>
-                <TabsContent value="a">
-                  <PanelDoc doc={invertido ? docB : docA} fila={filaSeleccionada} />
-                </TabsContent>
-                <TabsContent value="b">
-                  <PanelDoc doc={invertido ? docA : docB} fila={filaSeleccionada} />
-                </TabsContent>
+<TabsContent value="a">
+  <PanelDoc doc={invertido ? docB : docA} fila={filaSeleccionada} lado="a" />
+</TabsContent>
+<TabsContent value="b">
+  <PanelDoc doc={invertido ? docA : docB} fila={filaSeleccionada} lado="b" />
+</TabsContent>
               </Tabs>
             </StaggerItem>
           </Stagger>
@@ -683,6 +709,7 @@ export function ComparadorPage() {
                 descripcion="No se detectaron diferencias para el filtro y criterio seleccionado."
               />
             ) : (
+              <>
               <div className="overflow-hidden rounded-lg border">
                 <Table>
                   <TableHeader>
@@ -714,16 +741,27 @@ export function ComparadorPage() {
                     ))}
                   </TableHeader>
                   <TableBody>
-                    {table.getRowModel().rows.map((row, i) => (
+                    {table.getRowModel().rows.map((row) => (
                       <TableRow
                         key={row.id}
                         className={cn(
                           'cursor-pointer',
-                          i === diffIndex && 'bg-primary/5',
+                          diffActual && diffActual.id === row.original?.id && 'bg-primary/5',
                         )}
-                        onClick={() =>
-                          row.original && setDiffIndex(i)
-                        }
+                        onClick={() => {
+                          if (!row.original) return
+                          const idx = diferencias.findIndex(
+                            (d) => d.id === row.original.id,
+                          )
+                          if (idx >= 0) {
+                            setDiffIndex(idx)
+                            setPaginacion((prev) => ({
+                              ...prev,
+                              pageIndex: Math.floor(idx / prev.pageSize),
+                            }))
+                            filaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }
+                        }}
                       >
                         {row.getVisibleCells().map((cell) => (
                           <TableCell key={cell.id}>
@@ -735,6 +773,62 @@ export function ComparadorPage() {
                   </TableBody>
                 </Table>
               </div>
+              <div className="flex flex-col items-center justify-between gap-3 pt-4 sm:flex-row">
+                <p className="text-sm text-muted-foreground">
+                  Mostrando{' '}
+                  <span className="font-medium">
+                    {diferencias.length === 0 ? 0 : primera}–{ultima}
+                  </span>{' '}
+                  de{' '}
+                  <span className="font-medium">
+                    {table.getFilteredRowModel().rows.length}
+                  </span>{' '}
+                  diferencias
+                </p>
+                <div className="flex items-center gap-2">
+                  <Select
+                    value={String(paginacion.pageSize)}
+                    onValueChange={(v) =>
+                      setPaginacion((prev) => ({
+                        ...prev,
+                        pageSize: Number(v),
+                        pageIndex: 0,
+                      }))
+                    }
+                  >
+                    <SelectTrigger className="w-28" aria-label="Filas por página">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
+                        <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={!table.getCanPreviousPage()}
+                    onClick={() => table.previousPage()}
+                    aria-label="Página anterior"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <span className="min-w-16 text-center text-sm">
+                    {paginacion.pageIndex + 1} / {Math.max(totalPaginas, 1)}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    disabled={!table.getCanNextPage()}
+                    onClick={() => table.nextPage()}
+                    aria-label="Página siguiente"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              </>
             )}
           </CardContent>
         </Card>

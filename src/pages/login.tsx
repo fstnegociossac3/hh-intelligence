@@ -40,8 +40,8 @@ import {
   USUARIOS_DEMO,
   useSesionGuardada,
 } from '@/data/sesion-store'
-
-const CLAVE_DEMO = '123456'
+import { PASSWORD_DEMO, autenticar } from '@/data/usuarios-store'
+import { rutaPaginaInicio } from '@/data/configuracion-store'
 
 const loginSchema = z.object({
   email: z
@@ -162,7 +162,7 @@ export function LoginPage() {
   const sesionGuardada = useSesionGuardada()
   const [sesionAlMontar] = useState(sesionGuardada)
   if (sesionAlMontar) {
-    return <Navigate to="/dashboard" replace />
+    return <Navigate to={rutaPaginaInicio()} replace />
   }
 
   const onSubmit = async (values: LoginValues) => {
@@ -171,18 +171,14 @@ export function LoginPage() {
 
     await new Promise((resolve) => setTimeout(resolve, 900))
 
-    const usuario = USUARIOS_DEMO.find(
-      (u) =>
-        u.email.toLowerCase() === values.email.trim().toLowerCase() &&
-        values.password === CLAVE_DEMO,
-    )
+    const usuario = autenticar(values.email, values.password)
 
     if (usuario) {
       iniciarSesion(usuario, values.recordarme === true)
       toast.success(`Bienvenido, ${usuario.nombre}`, {
         description: `Rol: ${usuario.rol}.`,
       })
-      const destino = tomarRutaOrigen() ?? '/dashboard'
+      const destino = tomarRutaOrigen() ?? rutaPaginaInicio()
       navigate(destino, { replace: true })
     } else {
       toast.error('Credenciales incorrectas')
@@ -192,7 +188,7 @@ export function LoginPage() {
 
   const rellenarDemo = (email: string) => {
     setValue('email', email)
-    setValue('password', CLAVE_DEMO)
+    setValue('password', PASSWORD_DEMO)
     toast.info('Credenciales demo cargadas')
   }
 
@@ -350,7 +346,7 @@ export function LoginPage() {
                   ))}
                 </div>
                 <p className="text-center text-xs text-muted-foreground">
-                  Clave demo: {CLAVE_DEMO}
+                  Clave demo: {PASSWORD_DEMO}
                 </p>
               </CardFooter>
             </form>

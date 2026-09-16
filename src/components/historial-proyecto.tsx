@@ -28,6 +28,7 @@ import {
   ShieldAlert,
   TrendingUp,
   Upload,
+  UserCheck,
   Users,
   ListTree,
   Table2,
@@ -64,6 +65,7 @@ import {
   type AccionHistorial,
   type EventoHistorial,
 } from '@/data/historial-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
 
@@ -77,6 +79,8 @@ const TIPO_LABEL: Record<AccionHistorial, string> = {
   analisis_ejecutado: 'Análisis ejecutado',
   observacion_creada: 'Observación creada',
   observacion_resuelta: 'Observación resuelta',
+  observacion_estado_cambiado: 'Estado de observación cambiado',
+  observacion_asignada: 'Observación asignada',
   reanalisis_ejecutado: 'Reanálisis ejecutado',
   reporte_generado: 'Reporte generado',
 }
@@ -89,6 +93,8 @@ const TIPO_ICONO: Record<AccionHistorial, LucideIcon> = {
   analisis_ejecutado: TrendingUp,
   observacion_creada: ShieldAlert,
   observacion_resuelta: ClipboardCheck,
+  observacion_estado_cambiado: ShieldAlert,
+  observacion_asignada: UserCheck,
   reanalisis_ejecutado: RefreshCw,
   reporte_generado: FileBarChart,
 }
@@ -101,6 +107,8 @@ const ESTADO_POR_ACCION: Record<AccionHistorial, EstadoEvento> = {
   analisis_ejecutado: 'completado',
   observacion_creada: 'detectada',
   observacion_resuelta: 'resuelta',
+  observacion_estado_cambiado: 'detectada',
+  observacion_asignada: 'completado',
   reanalisis_ejecutado: 'completado',
   reporte_generado: 'generado',
 }
@@ -171,7 +179,8 @@ export function HistorialProyecto({ proyectoId }: { proyectoId: string }) {
   const [filtroAccion, setFiltroAccion] = useState('todas')
   const [filtroFecha, setFiltroFecha] = useState('todas')
   const [sorting, setSorting] = useState<SortingState>([])
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
 
   const eventos = useHistorial()
   const eventosProyecto = useMemo(
@@ -597,7 +606,7 @@ export function HistorialProyecto({ proyectoId }: { proyectoId: string }) {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {FILAS_POR_PAGINA.map((n) => (
+                    {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                       <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
                     ))}
                   </SelectContent>

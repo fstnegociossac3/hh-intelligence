@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Dispatch, SetStateAction } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { format, parseISO } from 'date-fns'
@@ -35,13 +35,12 @@ import {
 import type { LucideIcon } from 'lucide-react'
 import { toast } from 'sonner'
 
-import type { Proyecto, ProyectoEstado } from '@/types'
+import type { Proyecto } from '@/types'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO, PROGRESO_OK, PROGRESO_INFO } from '@/utils/estados-clases'
 import { usePermisos } from '@/utils/permisos'
 import { agregarNotificacion } from '@/data/notificaciones-store'
 
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
@@ -72,7 +71,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -108,6 +106,7 @@ import { MetradoVsPlano } from '@/components/metrado-vs-plano'
 import { PartidaVsCronograma } from '@/components/partida-vs-cronograma'
 import { PartidaVsEspecificacion } from '@/components/partida-vs-especificacion'
 import { ProcesamientoDocumental } from '@/components/procesamiento-documental'
+import { ProyectoForm } from '@/components/proyecto-form'
 import { EjecucionAnalisis } from '@/components/ejecucion-analisis'
 import { PresupuestoVsMetrado } from '@/components/presupuesto-vs-metrado'
 import { RelacionesDocumentales } from '@/components/relaciones-documentales'
@@ -121,6 +120,7 @@ import {
 } from '@/data/proyectos-store'
 import { obtenerObservaciones } from '@/data/observaciones-store'
 import { obtenerEstadoDocumentos, guardarEstadoDocumentos } from '@/data/documentos-store'
+import { obtenerEquipo, guardarEquipo } from '@/data/equipo-store'
 import { exportarExpedientePDF } from '@/utils/export-import'
 import {
   DOCUMENTOS_MOCK,
@@ -144,14 +144,6 @@ import {
   USUARIO_ACTUAL,
 } from '@/data/historial-store'
 
-const ESTADOS_DISPONIBLES: ProyectoEstado[] = [
-  'borrador',
-  'documentacion',
-  'en_analisis',
-  'observado',
-  'revisado',
-]
-
 function Etiqueta({ texto }: { texto: string }) {
   return (
     <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -174,7 +166,7 @@ export function ProyectoDetallePage() {
   )
   const [analizando, setAnalizando] = useState(false)
   const [equipo, setEquipo] = useState<MiembroEquipo[]>(
-    () => obtenerDetalleProyecto(id ?? '').equipo,
+    () => obtenerEquipo(id ?? ''),
   )
   const [categorias, setCategorias] = useState<CategoriaDocumento[]>(
     () =>
@@ -184,11 +176,35 @@ export function ProyectoDetallePage() {
   const [documentos, setDocumentos] = useState<DocumentoLista[]>(
     () => obtenerEstadoDocumentos(id ?? '')?.documentos ?? DOCUMENTOS_MOCK,
   )
+  const [idCargado, setIdCargado] = useState<string | null>(null)
+  const [edicionAbierta, setEdicionAbierta] = useState(false)
+  const timeoutAnalisis = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (timeoutAnalisis.current) window.clearTimeout(timeoutAnalisis.current)
+    }
+  }, [])
 
   useEffect(() => {
     if (!id) return
+    setAnalizando(false)
+    setEquipo(obtenerEquipo(id))
+    const estado = obtenerEstadoDocumentos(id)
+    setCategorias(estado.categorias)
+    setDocumentos(estado.documentos)
+    setIdCargado(id)
+  }, [id])
+
+  useEffect(() => {
+    if (!id || id !== idCargado) return
     guardarEstadoDocumentos(id, documentos, categorias)
-  }, [id, documentos, categorias])
+  }, [id, idCargado, documentos, categorias])
+
+  useEffect(() => {
+    if (!id || id !== idCargado) return
+    guardarEquipo(id, equipo)
+  }, [id, idCargado, equipo])
 
   useEffect(() => {
     const t = searchParams.get('tab')
@@ -394,7 +410,7 @@ export function ProyectoDetallePage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2 lg:flex-col lg:items-stretch">
-            <Dialog>
+            <Dialog open={edicionAbierta} onOpenChange={setEdicionAbierta}>
               {puedeEditar && (
                 <DialogTrigger asChild>
                   <Button variant="outline">
@@ -403,14 +419,19 @@ export function ProyectoDetallePage() {
                   </Button>
                 </DialogTrigger>
               )}
-              <DialogContent>
-                <EditarProyectoDialog
+              <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Editar proyecto</DialogTitle>
+                  <DialogDescription>
+                    Actualice los datos del expediente técnico por pasos.
+                  </DialogDescription>
+                </DialogHeader>
+                <ProyectoForm
+                  key={proyecto.id}
+                  modo="editar"
                   proyecto={proyecto}
-                  onGuardar={(datos) => {
-                    actualizarProyecto(proyecto.id, {
-                      ...datos,
-                      actualizadoEl: format(new Date(), 'yyyy-MM-dd'),
-                    })
+                  onGuardar={(guardado) => {
+                    actualizarProyecto(proyecto.id, { ...guardado })
                     registrarEvento({
                       proyectoId: proyecto.id,
                       proyectoCodigo: proyecto.codigo,
@@ -418,10 +439,12 @@ export function ProyectoDetallePage() {
                       usuario: USUARIO_ACTUAL,
                       descripcion: `Datos del expediente ${proyecto.codigo} actualizados`,
                     })
+                    setEdicionAbierta(false)
                     toast.success('Proyecto actualizado', {
                       description: `Los datos de ${proyecto.codigo} fueron actualizados.`,
                     })
                   }}
+                  onCerrar={() => setEdicionAbierta(false)}
                 />
               </DialogContent>
             </Dialog>
@@ -761,7 +784,14 @@ export function ProyectoDetallePage() {
                   descripcion: `Análisis de ${proyecto.codigo} completado · ${resumen.documentos} documentos · ${resumen.observaciones} observaciones.`,
                   ruta: `/proyectos/${proyecto.id}?tab=analisis`,
                 })
-                window.setTimeout(() => setAnalizando(false), 1800)
+                if (timeoutAnalisis.current) window.clearTimeout(timeoutAnalisis.current)
+                timeoutAnalisis.current = window.setTimeout(() => setAnalizando(false), 1800)
+              }}
+              onCancelado={() => {
+                toast.info('Ejecución cancelada', {
+                  description: 'El análisis se detuvo antes de guardar cambios.',
+                })
+                setAnalizando(false)
               }}
             />
           ) : (
@@ -805,79 +835,6 @@ export function ProyectoDetallePage() {
         </TabsContent>
       </Tabs>
     </div>
-  )
-}
-
-function EditarProyectoDialog({
-  proyecto,
-  onGuardar,
-}: {
-  proyecto: Proyecto
-  onGuardar: (datos: { nombre: string; responsable: string; entidad: string; estado: ProyectoEstado }) => void
-}) {
-  const [nombre, setNombre] = useState(proyecto.nombre)
-  const [responsable, setResponsable] = useState(proyecto.responsable)
-  const [entidad, setEntidad] = useState(proyecto.entidad)
-  const [estado, setEstado] = useState<ProyectoEstado>(proyecto.estado)
-
-  return (
-    <>
-      <DialogHeader>
-        <DialogTitle>Editar proyecto</DialogTitle>
-        <DialogDescription>
-          Actualice los datos principales del expediente.
-        </DialogDescription>
-      </DialogHeader>
-      <div className="space-y-4 py-2">
-        <div className="space-y-2">
-          <Label htmlFor="ed-nombre">Nombre del proyecto</Label>
-          <Input
-            id="ed-nombre"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="ed-responsable">Responsable</Label>
-          <Input
-            id="ed-responsable"
-            value={responsable}
-            onChange={(e) => setResponsable(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="ed-entidad">Entidad pública</Label>
-          <Input
-            id="ed-entidad"
-            value={entidad}
-            onChange={(e) => setEntidad(e.target.value)}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label>Estado</Label>
-          <Select value={estado} onValueChange={(v) => setEstado(v as ProyectoEstado)}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ESTADOS_DISPONIBLES.map((e) => (
-                <SelectItem key={e} value={e}>
-                  {e === 'borrador' ? 'Borrador' : e === 'documentacion' ? 'Documentación' : e === 'en_analisis' ? 'En análisis' : e === 'observado' ? 'Observado' : 'Revisado'}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-      <DialogFooter>
-        <Button
-          disabled={nombre.trim().length < 3}
-          onClick={() => onGuardar({ nombre, responsable, entidad, estado })}
-        >
-          Guardar cambios
-        </Button>
-      </DialogFooter>
-    </>
   )
 }
 

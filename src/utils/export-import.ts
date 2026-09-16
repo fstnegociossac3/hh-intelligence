@@ -48,6 +48,132 @@ export async function leerArchivoJSON<T>(file: File): Promise<T> {
   return JSON.parse(texto) as T
 }
 
+export interface ErrorCampoImport {
+  campo: string
+  detalle: string
+}
+
+export interface ResultadoValidacion {
+  ok: boolean
+  errores: ErrorCampoImport[]
+}
+
+export function validarProyectoDetallado(x: unknown): ResultadoValidacion {
+  if (!x || typeof x !== 'object') {
+    return { ok: false, errores: [{ campo: '(raíz)', detalle: 'No es un objeto de proyecto.' }] }
+  }
+  const p = x as Record<string, unknown>
+  const errores: ErrorCampoImport[] = []
+  const esString = (v: unknown): v is string => typeof v === 'string'
+  const esNumero = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v)
+
+  if (!esString(p.id)) errores.push({ campo: 'id', detalle: 'Debe ser un texto (string).' })
+  if (!esString(p.codigo)) errores.push({ campo: 'codigo', detalle: 'Debe ser un texto (string).' })
+  if (!esString(p.nombre)) errores.push({ campo: 'nombre', detalle: 'Debe ser un texto (string).' })
+  if (!esString(p.entidad)) errores.push({ campo: 'entidad', detalle: 'Debe ser un texto (string).' })
+  if (!esString(p.sector)) errores.push({ campo: 'sector', detalle: 'Debe ser un texto (string).' })
+  if (!esString(p.tipoObra) || !TIPOS_OBRA.includes(p.tipoObra)) {
+    errores.push({ campo: 'tipoObra', detalle: `Debe ser uno de: ${TIPOS_OBRA.join(', ')}.` })
+  }
+  if (!esString(p.responsable)) errores.push({ campo: 'responsable', detalle: 'Debe ser un texto (string).' })
+  if (!esNumero(p.avance)) errores.push({ campo: 'avance', detalle: 'Debe ser numérico (avance 0-100).' })
+  if (!esNumero(p.observaciones)) errores.push({ campo: 'observaciones', detalle: 'Debe ser un número entero.' })
+  if (!esNumero(p.monto)) errores.push({ campo: 'monto', detalle: 'Debe ser numérico (monto del proyecto).' })
+  if (!esString(p.fechaCreacion)) errores.push({ campo: 'fechaCreacion', detalle: 'Debe ser una fecha en texto (AAAA-MM-DD).' })
+  if (!esString(p.fechaInicio) && p.fechaInicio !== null && p.fechaInicio !== undefined) {
+    errores.push({ campo: 'fechaInicio', detalle: 'Debe ser una fecha en texto o null.' })
+  }
+  if (!esString(p.actualizadoEl)) errores.push({ campo: 'actualizadoEl', detalle: 'Debe ser una fecha en texto (AAAA-MM-DD).' })
+  if (!esString(p.estado) || !ESTADOS_PROYECTO.includes(p.estado)) {
+    errores.push({ campo: 'estado', detalle: `Debe ser uno de: ${ESTADOS_PROYECTO.join(', ')}.` })
+  }
+  if (!esString(p.ubicacion)) errores.push({ campo: 'ubicacion', detalle: 'Debe ser un texto (string).' })
+  if (
+    p.fechaEntrega !== undefined &&
+    p.fechaEntrega !== null &&
+    !esString(p.fechaEntrega)
+  ) {
+    errores.push({ campo: 'fechaEntrega', detalle: 'Debe ser una fecha en texto o null.' })
+  }
+
+  return { ok: errores.length === 0, errores }
+}
+
+export function validarObservacionDetallada(x: unknown): ResultadoValidacion {
+  if (!x || typeof x !== 'object') {
+    return { ok: false, errores: [{ campo: '(raíz)', detalle: 'No es un objeto de observación.' }] }
+  }
+  const o = x as Record<string, unknown>
+  const errores: ErrorCampoImport[] = []
+
+  for (const [campo, lista] of [
+    ['id', o.id],
+    ['codigo', o.codigo],
+    ['proyecto', o.proyecto],
+    ['partida', o.partida],
+    ['tipoInconsistencia', o.tipoInconsistencia],
+    ['regla', o.regla],
+    ['responsable', o.responsable],
+    ['fecha', o.fecha],
+  ] as const) {
+    if (typeof lista !== 'string') errores.push({ campo, detalle: 'Debe ser un texto (string).' })
+  }
+  if (typeof o.criticidad !== 'string' || !CRITICIDADES_OBS.includes(o.criticidad)) {
+    errores.push({ campo: 'criticidad', detalle: `Debe ser uno de: ${CRITICIDADES_OBS.join(', ')}.` })
+  }
+  if (typeof o.estado !== 'string' || !ESTADOS_OBS.includes(o.estado)) {
+    errores.push({ campo: 'estado', detalle: `Debe ser uno de: ${ESTADOS_OBS.join(', ')}.` })
+  }
+
+  return { ok: errores.length === 0, errores }
+}
+
+export function descargarPlantillaImportacion() {
+  const plantilla = {
+    proyectos: [
+      {
+        id: 'proy-plantilla-001',
+        codigo: 'EXP-2026-0001',
+        nombre: 'Mejoramiento de la Institución Educativa N° 50001',
+        entidad: 'Municipalidad Provincial de San Román',
+        sector: 'Educación',
+        tipoObra: 'Educación',
+        responsable: 'Andrea Quispe',
+        avance: 25,
+        observaciones: 1,
+        monto: 1250000,
+        fechaCreacion: '2026-01-15',
+        fechaInicio: '2026-03-01',
+        fechaEntrega: null,
+        actualizadoEl: '2026-08-20',
+        estado: 'documentacion',
+        ubicacion: 'San Román, Puno',
+        descripcion: 'Proyecto de mejora de infraestructura educativa.',
+        especialistas: 'Andrea Quispe',
+        revisor: 'Jorge Rojas',
+        departamento: 'Puno',
+        provincia: 'San Román',
+        distrito: 'Juliaca',
+      },
+    ],
+    observaciones: [
+      {
+        id: 'obs-plantilla-001',
+        codigo: 'OBS-001',
+        proyecto: 'EXP-2026-0001',
+        partida: 'Concreto simple en falsa zapata',
+        tipoInconsistencia: 'Diferencia de cantidad',
+        regla: 'Presupuesto vs. Metrado',
+        criticidad: 'media',
+        responsable: 'Carlos Mendoza',
+        estado: 'nueva',
+        fecha: '2026-08-10',
+      },
+    ],
+  }
+  descargarJSON(plantilla, 'plantilla-importacion-hh-intelligence')
+}
+
 /* ------------------------------------------------------------------ */
 /*  Generación de PDF                                                  */
 /* ------------------------------------------------------------------ */
@@ -833,44 +959,9 @@ export function imprimirReporteHTML(opciones: DatosReportePDF) {
 }
 
 export function esProyectoValido(x: unknown): x is Proyecto {
-  if (!x || typeof x !== 'object') return false
-  const p = x as Record<string, unknown>
-  return (
-    typeof p.id === 'string' &&
-    typeof p.codigo === 'string' &&
-    typeof p.nombre === 'string' &&
-    typeof p.entidad === 'string' &&
-    typeof p.sector === 'string' &&
-    typeof p.tipoObra === 'string' &&
-    TIPOS_OBRA.includes(p.tipoObra) &&
-    typeof p.responsable === 'string' &&
-    typeof p.avance === 'number' &&
-    typeof p.observaciones === 'number' &&
-    typeof p.monto === 'number' &&
-    typeof p.fechaCreacion === 'string' &&
-    (typeof p.fechaInicio === 'string' || p.fechaInicio === null) &&
-    typeof p.actualizadoEl === 'string' &&
-    typeof p.estado === 'string' &&
-    ESTADOS_PROYECTO.includes(p.estado) &&
-    typeof p.ubicacion === 'string'
-  )
+  return validarProyectoDetallado(x).ok
 }
 
 export function esObservacionValida(x: unknown): x is Observacion {
-  if (!x || typeof x !== 'object') return false
-  const o = x as Record<string, unknown>
-  return (
-    typeof o.id === 'string' &&
-    typeof o.codigo === 'string' &&
-    typeof o.proyecto === 'string' &&
-    typeof o.partida === 'string' &&
-    typeof o.tipoInconsistencia === 'string' &&
-    typeof o.regla === 'string' &&
-    typeof o.criticidad === 'string' &&
-    CRITICIDADES_OBS.includes(o.criticidad) &&
-    typeof o.responsable === 'string' &&
-    typeof o.estado === 'string' &&
-    ESTADOS_OBS.includes(o.estado) &&
-    typeof o.fecha === 'string'
-  )
+  return validarObservacionDetallada(x).ok
 }

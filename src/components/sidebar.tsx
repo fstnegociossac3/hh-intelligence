@@ -4,7 +4,6 @@ import { Separator } from '@/components/ui/separator'
 import {
   Avatar,
   AvatarFallback,
-  AvatarImage,
 } from '@/components/ui/avatar'
 import {
   Tooltip,
@@ -98,6 +97,7 @@ function SidebarContenido({
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-3">
         {rutas
+          .filter((ruta) => !ruta.oculta)
           .filter((ruta) =>
             MODULOS_POR_ROL[rolComoClave(sesion.rol)].includes(ruta.modulo),
           )
@@ -144,10 +144,6 @@ function SidebarContenido({
         {colapsada ? (
           <div className="flex justify-center">
             <Avatar className="h-9 w-9">
-              <AvatarImage
-                src="https://github.com/shadcn.png"
-                alt={sesion.nombre}
-              />
               <AvatarFallback className="bg-sidebar-accent text-white">
                 {iniciales(sesion.nombre)}
               </AvatarFallback>
@@ -156,10 +152,6 @@ function SidebarContenido({
         ) : (
           <div className="flex items-center gap-3">
             <Avatar className="h-9 w-9">
-              <AvatarImage
-                src="https://github.com/shadcn.png"
-                alt={sesion.nombre}
-              />
               <AvatarFallback className="bg-sidebar-accent text-white">
                 {iniciales(sesion.nombre)}
               </AvatarFallback>

@@ -30,6 +30,7 @@ import { cn } from '@/utils/cn'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO } from '@/utils/estados-clases'
 import { KpiCard } from '@/components/kpi-card'
 import { Badge } from '@/components/ui/badge'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -172,7 +173,8 @@ export function MetradoVsPlano() {
   const [filtroEspecialidad, setFiltroEspecialidad] = useState('todas')
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [filtroCriticidad, setFiltroCriticidad] = useState('todas')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 8 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [seleccionId, setSeleccionId] = useState<string | null>(null)
 
   const datosFiltrados = useMemo(() => {
@@ -489,7 +491,7 @@ export function MetradoVsPlano() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {FILAS_POR_PAGINA.map((n) => (
+              {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                 <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
               ))}
             </SelectContent>

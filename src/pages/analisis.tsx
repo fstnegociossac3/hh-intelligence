@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   type ColumnDef,
   type Header,
@@ -63,6 +63,7 @@ import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_NEUTRO } from '@/util
 import { useAnalisis, calcularTotales } from '@/data/analisis-store'
 import type { ResultadoAnalisis, RegistroAnalisis } from '@/data/analisis-store'
 import { useProyectos } from '@/data/proyectos-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 import { EjecucionAnalisis, type ResumenEjecucion } from '@/components/ejecucion-analisis'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
@@ -121,11 +122,16 @@ export function AnalisisPage() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [busqueda, setBusqueda] = useState('')
   const [filtroResultado, setFiltroResultado] = useState('todos')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [ejecutando, setEjecutando] = useState(false)
 
   const registros = useAnalisis()
   const proyectos = useProyectos()
+
+  useEffect(() => {
+    setPaginacion((prev) => ({ ...prev, pageIndex: 0 }))
+  }, [busqueda, filtroResultado])
 
   const datosFiltrados = useMemo(() => {
     return registros.filter((a) => {
@@ -329,6 +335,12 @@ export function AnalisisPage() {
               ruta: '/analisis',
             })
             window.setTimeout(() => setEjecutando(false), 1800)
+          }}
+          onCancelado={() => {
+            toast.info('Ejecución cancelada', {
+              description: 'El análisis se detuvo antes de guardar cambios.',
+            })
+            setEjecutando(false)
           }}
         />
       )}
@@ -553,7 +565,7 @@ export function AnalisisPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FILAS_POR_PAGINA.map((n) => (
+                {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                   <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
                 ))}
               </SelectContent>

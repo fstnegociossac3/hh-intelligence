@@ -26,7 +26,7 @@ import {
   rolComoClave,
 } from '@/utils/permisos'
 import { iniciales } from '@/utils/formatters'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 const perfilSchema = z.object({
   nombre: z.string().min(1, 'Ingrese su nombre completo'),
@@ -107,7 +107,6 @@ export function PerfilPage() {
             <CardContent className="space-y-4">
               <div className="flex items-center gap-4">
                 <Avatar className="h-16 w-16">
-                  <AvatarImage src="https://github.com/shadcn.png" alt={sesion.nombre} />
                   <AvatarFallback className="text-lg">
                     {iniciales(sesion.nombre)}
                   </AvatarFallback>

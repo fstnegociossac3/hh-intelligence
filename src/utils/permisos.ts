@@ -11,6 +11,7 @@ export type ModuloSistema =
   | 'reportes'
   | 'usuarios'
   | 'configuracion'
+  | 'perfil'
 
 export const MODULO_LABEL: Record<ModuloSistema, string> = {
   dashboard: 'Dashboard',
@@ -21,6 +22,7 @@ export const MODULO_LABEL: Record<ModuloSistema, string> = {
   reportes: 'Reportes',
   usuarios: 'Usuarios',
   configuracion: 'Configuración',
+  perfil: 'Perfil',
 }
 
 export const ROLES_LECTURA: readonly RolSesion[] = ['consulta', 'revisor']
@@ -35,6 +37,7 @@ export const MODULOS_POR_ROL: Record<RolSesion, readonly ModuloSistema[]> = {
     'reportes',
     'usuarios',
     'configuracion',
+    'perfil',
   ],
   analista: [
     'dashboard',
@@ -42,6 +45,7 @@ export const MODULOS_POR_ROL: Record<RolSesion, readonly ModuloSistema[]> = {
     'analisis',
     'observaciones',
     'reportes',
+    'perfil',
   ],
   revisor: [
     'dashboard',
@@ -49,6 +53,7 @@ export const MODULOS_POR_ROL: Record<RolSesion, readonly ModuloSistema[]> = {
     'analisis',
     'observaciones',
     'reportes',
+    'perfil',
   ],
   consulta: [
     'dashboard',
@@ -57,6 +62,7 @@ export const MODULOS_POR_ROL: Record<RolSesion, readonly ModuloSistema[]> = {
     'observaciones',
     'comparador',
     'reportes',
+    'perfil',
   ],
 }
 

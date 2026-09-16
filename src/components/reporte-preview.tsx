@@ -60,7 +60,7 @@ interface ReportePrev {
 }
 
 const CRITICIDAD_LABEL: Record<Criticidad, string> = {
-  critica: 'CrÃ­tica',
+  critica: 'Crítica',
   alta: 'Alta',
   media: 'Media',
   baja: 'Baja',
@@ -76,7 +76,7 @@ const CRITICIDAD_BADGE: Record<Criticidad, string> = {
 const ESTADO_LABEL: Record<EstadoObs, string> = {
   nueva: 'Nueva',
   asignada: 'Asignada',
-  en_revision: 'En revisiÃ³n',
+  en_revision: 'En revisión',
   justificada: 'Justificada',
   resuelta: 'Resuelta',
 }
@@ -146,7 +146,7 @@ export function ReportePreview({
     { label: 'Coincidencias', valor: resumen.coincidencias, icono: CheckCircle2, tono: 'success' },
     { label: 'Advertencias', valor: resumen.advertencias, icono: Gauge, tono: 'warning' },
     { label: 'Inconsistencias', valor: resumen.inconsistencias, icono: AlertTriangle, tono: 'danger' },
-    { label: 'Ãndice de coherencia', valor: resumen.indice, icono: Scale, tono: 'info' },
+    { label: 'Índice de coherencia', valor: resumen.indice, icono: Scale, tono: 'info' },
   ]
 
   const datosPDF: DatosReportePDF = {
@@ -184,9 +184,9 @@ export function ReportePreview({
       estado: o.estado,
     })),
     resumenContenido: [
-      `Se analizaron ${resumen.documentos} documento(s) del expediente tÃ©cnico ${reporte.proyecto}.`,
-      `El motor de anÃ¡lisis registrÃ³ ${resumen.advertencias} observaciÃ³n(es) y ${resumen.inconsistencias} inconsistencia(s) de criticidad crÃ­tica.`,
-      `El Ã­ndice de coherencia documental es de ${resumen.indice}%.`,
+      `Se analizaron ${resumen.documentos} documento(s) del expediente técnico ${reporte.proyecto}.`,
+      `El motor de análisis registró ${resumen.advertencias} observación(es) y ${resumen.inconsistencias} inconsistencia(s) de criticidad crítica.`,
+      `El índice de coherencia documental es de ${resumen.indice}%.`,
     ],
     recomendaciones,
     nombreArchivo: reporte.nombre,
@@ -195,14 +195,14 @@ export function ReportePreview({
   const descargar = () => {
     exportarReportePDF(datosPDF)
     toast.success('Reporte exportado', {
-      description: `Se descargÃ³ "${reporte.nombre}.pdf".`,
+      description: `Se descargó "${reporte.nombre}.pdf".`,
     })
   }
 
   const imprimir = () => {
     imprimirReporteHTML(datosPDF)
-    toast.info('Enviando a impresiÃ³n', {
-      description: `Abrir el cuadro de diÃ¡logo de impresiÃ³n para "${reporte.nombre}".`,
+    toast.info('Enviando a impresión', {
+      description: `Abrir el cuadro de diálogo de impresión para "${reporte.nombre}".`,
     })
   }
 
@@ -215,7 +215,7 @@ export function ReportePreview({
         <SheetHeader className="pb-1">
           <SheetTitle>Vista previa del reporte</SheetTitle>
           <SheetDescription>
-            {reporte.nombre} Â· {reporte.proyecto}
+            {reporte.nombre} · {reporte.proyecto}
           </SheetDescription>
         </SheetHeader>
 
@@ -268,7 +268,7 @@ export function ReportePreview({
               </h3>
               <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
                 <Campo icono={Building2} etiqueta="Nombre del proyecto" valor={proyecto.nombre} />
-                <Campo icono={Hash} etiqueta="CÃ³digo" valor={proyecto.codigo} mono />
+                <Campo icono={Hash} etiqueta="Código" valor={proyecto.codigo} mono />
                 <Campo icono={Landmark} etiqueta="Entidad" valor={proyecto.entidad} />
                 <Campo icono={UserRound} etiqueta="Responsable" valor={reporte.responsable} />
                 <Campo icono={CalendarRange} etiqueta="Fecha del reporte" valor={formatFecha(reporte.fecha.slice(0, 10))} />
@@ -291,7 +291,7 @@ export function ReportePreview({
             <section className="space-y-3">
               <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Scale className="h-4 w-4 text-indigo-600" />
-                Resumen del anÃ¡lisis
+                Resumen del análisis
               </h3>
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {resumenItems.map((item) => {
@@ -332,7 +332,7 @@ export function ReportePreview({
               </h3>
               <div className="overflow-hidden rounded-lg border border-slate-200">
                 <div className="hidden grid-cols-12 bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600 lg:grid">
-                  <span className="col-span-2">CÃ³digo</span>
+                  <span className="col-span-2">Código</span>
                   <span className="col-span-3">Partida</span>
                   <span className="col-span-3">Tipo</span>
                   <span className="col-span-2">Criticidad</span>

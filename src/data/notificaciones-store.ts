@@ -81,3 +81,17 @@ export function marcarNotificacionLeida(id: string) {
 export function marcarTodasLeidas() {
   escribir(leer().map((n) => ({ ...n, leida: true })))
 }
+
+export function eliminarNotificacionesDeProyecto(
+  proyectoId: string,
+  codigo: string,
+) {
+  const lista = leer()
+  const restantes = lista.filter((n) => {
+    const ligadaAlProyecto =
+      n.ruta.includes(`/proyectos/${proyectoId}`) ||
+      n.descripcion.includes(codigo)
+    return !ligadaAlProyecto
+  })
+  if (restantes.length !== lista.length) escribir(restantes)
+}

@@ -97,14 +97,29 @@ const MOTIVOS = [
   'Revisión de planos y detalles estructurales',
 ]
 
+function calcularLabels(doc: DocumentoLista): string[] {
+  const [majRaw, minRaw] = doc.version.split('.').map(Number)
+  const labels: string[] = []
+  let M = majRaw
+  let m = minRaw
+  for (;;) {
+    labels.unshift(`${M}.${m}`)
+    m -= 1
+    if (m < 0) {
+      M -= 1
+      m = 1
+    }
+    if (M < 1) break
+  }
+  return labels
+}
+
 export function numeroVersiones(doc: DocumentoLista) {
-  const [majRaw] = doc.version.split('.').map(Number)
-  return majRaw <= 1 ? 2 : majRaw === 2 ? 3 : 4
+  return calcularLabels(doc).length
 }
 
 function buildVersiones(doc: DocumentoLista): VersionDoc[] {
-  const [majRaw, minRaw] = doc.version.split('.').map(Number)
-  const total = numeroVersiones(doc)
+  const labels = calcularLabels(doc)
 
   const usernames = [
     doc.responsable,
@@ -114,19 +129,6 @@ function buildVersiones(doc: DocumentoLista): VersionDoc[] {
   ]
   const estados: EstadoIa[] = ['error', 'pendiente', 'procesando', 'procesado']
   const resultados: ResultadoAnalisis[] = ['pendiente', 'observado', 'observado', 'conforme']
-
-  const labels: string[] = []
-  let M = majRaw
-  let m = minRaw
-  for (let i = 0; i < total; i++) {
-    labels.unshift(`${M}.${m}`)
-    m -= 1
-    if (m < 0) {
-      M -= 1
-      m = 1
-    }
-    if (M < 1) break
-  }
 
   const fechaBase = parseISO(doc.fecha)
   const fechas = labels.map((_, i) => {
@@ -181,7 +183,9 @@ export function VersionesDocumento({
   const [verId, setVerId] = useState<string | null>(null)
 
   const actual = versiones.find((v) => v.version === versionActual) ?? versiones[versiones.length - 1]
-  const anterior = versiones[Math.max(0, versiones.indexOf(actual) - 1)]
+  const anterior = versiones.length > 1
+    ? versiones[Math.max(0, versiones.indexOf(actual) - 1)]
+    : null
 
   const verSeleccionada = versiones.find((v) => v.version === verId) ?? null
 
@@ -244,8 +248,12 @@ export function VersionesDocumento({
             Comparación simulada
           </h3>
           <div className="ml-auto flex items-center gap-2">
-            <Badge variant="outline">v{anterior.version}</Badge>
-            <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
+            {anterior && (
+              <>
+                <Badge variant="outline">v{anterior.version}</Badge>
+                <ArrowLeftRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </>
+            )}
             <Badge variant="outline" className="border-transparent bg-primary/10 text-primary">
               v{actual.version}
             </Badge>
@@ -363,7 +371,9 @@ export function VersionesDocumento({
                     className="h-8 gap-1.5"
                     onClick={() =>
                       toast.info('Comparar versiones', {
-                        description: `Comparando v${anterior.version} vs. v${actual.version}.`,
+                        description: anterior
+                          ? `Comparando v${anterior.version} vs. v${actual.version}.`
+                          : `Solo existe la versión v${actual.version}.`,
                       })
                     }
                   >

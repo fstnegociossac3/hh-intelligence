@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   type ColumnDef,
@@ -74,6 +74,7 @@ import { ReportePreview } from '@/components/reporte-preview'
 import type { Proyecto } from '@/types'
 import { useProyectos } from '@/data/proyectos-store'
 import { useAnalisis, type RegistroAnalisis } from '@/data/analisis-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 import { useObservaciones } from '@/data/observaciones-store'
 import { agregarNotificacion } from '@/data/notificaciones-store'
 import { obtenerEstadoDocumentos } from '@/data/documentos-store'
@@ -240,7 +241,8 @@ export function ReportesPage() {
   const [filtroProyecto, setFiltroProyecto] = useState('todos')
   const [filtroTipo, setFiltroTipo] = useState('todos')
   const [filtroFecha, setFiltroFecha] = useState('todas')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [searchParams, setSearchParams] = useSearchParams()
   const [seleccionId, setSeleccionId] = useState<string | null>(() =>
     searchParams.get('reporte'),
@@ -251,7 +253,7 @@ export function ReportesPage() {
   const analisis = useAnalisis()
   const observaciones = useObservaciones()
 
-  const construirDatos = (r: Reporte): DatosReportePDF => {
+  const construirDatos = useCallback((r: Reporte): DatosReportePDF => {
     const p = proyectos.find((x) => x.codigo === r.proyecto) ?? null
     const a = analisis.find((x) => x.codigo === r.proyecto) ?? null
     const docs = p ? obtenerEstadoDocumentos(p.id).documentos : []
@@ -304,7 +306,7 @@ export function ReportesPage() {
       recomendaciones: recomendacionesPara(r.tipo),
       nombreArchivo: r.nombre,
     }
-  }
+  }, [proyectos, analisis, observaciones])
 
   const opcionesProyecto = useMemo(
     () => proyectos.map((p) => p.codigo),
@@ -338,6 +340,63 @@ export function ReportesPage() {
 
   const nombreProyecto = (codigo: string) =>
     proyectos.find((p) => p.codigo === codigo)?.nombre ?? codigo
+
+  const verReporte = useCallback((r: Reporte) => {
+    setSeleccionId(r.id)
+  }, [])
+
+  const generarReporte = useCallback(
+    (id: string) => {
+      setGenerados((prev) => {
+        const siguiente = new Set(prev)
+        siguiente.add(id)
+        persistirGenerados(siguiente)
+        return siguiente
+      })
+      const reporte = reportes.find((r) => r.id === id)
+      if (!reporte) return
+      try {
+        exportarReportePDF(construirDatos(reporte))
+      } catch {
+        toast.error('No se pudo generar el archivo PDF', {
+          description: 'El reporte fue registrado correctamente.',
+        })
+      }
+      registrarEvento({
+        proyectoCodigo: reporte.proyecto,
+        accion: 'reporte_generado',
+        usuario: USUARIO_ACTUAL,
+        descripcion: `${reporte.nombre} generado`,
+      })
+      agregarNotificacion({
+        tipo: 'reporte',
+        titulo: 'Reporte generado',
+        descripcion: `${reporte.nombre} del expediente ${reporte.proyecto} fue generado y descargado.`,
+        ruta: `/reportes?reporte=${reporte.id}`,
+      })
+      toast.success('Reporte generado', {
+        description: 'El reporte se generó correctamente y se descargó el PDF.',
+      })
+    },
+    [reportes, construirDatos],
+  )
+
+  const descargarReporte = useCallback(
+    (r: Reporte) => {
+      exportarReportePDF(construirDatos(r))
+      toast.success('Reporte exportado', {
+        description: `Se descargó "${r.nombre}.pdf".`,
+      })
+    },
+    [construirDatos],
+  )
+
+  const imprimirReporte = useCallback(
+    (r: Reporte) => {
+      imprimirReporteHTML(construirDatos(r))
+    },
+    [construirDatos],
+  )
 
   const columnas = useMemo<ColumnDef<Reporte>[]>(
     () => [
@@ -435,7 +494,7 @@ export function ReportesPage() {
         },
       },
     ],
-    [puedeEditar],
+    [puedeEditar, verReporte, generarReporte, descargarReporte, imprimirReporte],
   )
 
   const table = useReactTable({
@@ -486,59 +545,15 @@ export function ReportesPage() {
   ]
 
   useEffect(() => {
+    setPaginacion((prev) => ({ ...prev, pageIndex: 0 }))
+  }, [busqueda, filtroProyecto, filtroTipo, filtroFecha])
+
+  useEffect(() => {
     const r = searchParams.get('reporte')
     if (r) setSeleccionId(r)
   }, [searchParams])
 
   const resultado = reportes.find((r) => r.id === seleccionId) ?? null
-
-  const verReporte = (r: Reporte) => {
-    setSeleccionId(r.id)
-  }
-
-  const generarReporte = (id: string) => {
-    setGenerados((prev) => {
-      const siguiente = new Set(prev)
-      siguiente.add(id)
-      persistirGenerados(siguiente)
-      return siguiente
-    })
-    const reporte = reportes.find((r) => r.id === id)
-    if (!reporte) return
-    try {
-      exportarReportePDF(construirDatos(reporte))
-    } catch {
-      toast.error('No se pudo generar el archivo PDF', {
-        description: 'El reporte fue registrado correctamente.',
-      })
-    }
-    registrarEvento({
-      proyectoCodigo: reporte.proyecto,
-      accion: 'reporte_generado',
-      usuario: USUARIO_ACTUAL,
-      descripcion: `${reporte.nombre} generado`,
-    })
-    agregarNotificacion({
-      tipo: 'reporte',
-      titulo: 'Reporte generado',
-      descripcion: `${reporte.nombre} del expediente ${reporte.proyecto} fue generado y descargado.`,
-      ruta: `/reportes?reporte=${reporte.id}`,
-    })
-    toast.success('Reporte generado', {
-      description: 'El reporte se generó correctamente y se descargó el PDF.',
-    })
-  }
-
-  const descargarReporte = (r: Reporte) => {
-    exportarReportePDF(construirDatos(r))
-    toast.success('Reporte exportado', {
-      description: `Se descargó "${r.nombre}.pdf".`,
-    })
-  }
-
-  const imprimirReporte = (r: Reporte) => {
-    imprimirReporteHTML(construirDatos(r))
-  }
 
   return (
     <div className="space-y-6">
@@ -745,7 +760,7 @@ export function ReportesPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FILAS_POR_PAGINA.map((n) => (
+                {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                   <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
                 ))}
               </SelectContent>

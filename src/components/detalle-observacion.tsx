@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowRight,
   FileText,
@@ -340,6 +340,12 @@ export function DetalleObservacionAmplio({
       resultado: 'Inconsistencia continúa',
     },
   ])
+  const timers = useRef<number[]>([])
+
+  useEffect(() => {
+    const actuales = timers.current
+    return () => actuales.forEach(clearTimeout)
+  }, [])
 
   function registrar(accion: string, detalle: string | undefined, icono: LucideIcon) {
     const id = Date.now()
@@ -438,13 +444,14 @@ export function DetalleObservacionAmplio({
     })
 
     PASOS_REANALISIS.forEach((_, i) => {
-      setTimeout(() => setPaso(i + 1), 700 * (i + 1))
+      timers.current.push(window.setTimeout(() => setPaso(i + 1), 700 * (i + 1)))
     })
     ;[20, 40, 60, 80].forEach((p) => {
-      setTimeout(() => setProgreso(p), 700 * (p / 20))
+      timers.current.push(window.setTimeout(() => setProgreso(p), 700 * (p / 20)))
     })
 
-    setTimeout(() => {
+    timers.current.push(
+      window.setTimeout(() => {
       const nuevoResultado: ResultadoReanalisis =
         o.estado === 'resuelta' || o.estado === 'justificada'
           ? 'resuelta'
@@ -488,7 +495,8 @@ export function DetalleObservacionAmplio({
           description: `${o.codigo} requiere una revisión manual del especialista.`,
         })
       }
-    }, 3600)
+    }, 3600),
+    )
   }
 
   function formatearFecha(d: Date) {

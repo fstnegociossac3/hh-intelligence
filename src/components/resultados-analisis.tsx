@@ -39,6 +39,7 @@ import { ESTADO_OK, ESTADO_WARNING, ESTADO_CRITICO, ESTADO_INFO, ESTADO_NEUTRO }
 import { KpiCard } from '@/components/kpi-card'
 import { CoherenceScore } from '@/components/coherence-score'
 import { Badge } from '@/components/ui/badge'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -207,7 +208,8 @@ export function ResultadosAnalisis() {
   const [filtroCriticidad, setFiltroCriticidad] = useState('todas')
   const [filtroEstado, setFiltroEstado] = useState('todos')
   const [filtroEspecialidad, setFiltroEspecialidad] = useState('todas')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 8 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [seleccionId, setSeleccionId] = useState<string | null>(null)
 
   const datosFiltrados = useMemo(() => {
@@ -614,7 +616,7 @@ export function ResultadosAnalisis() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {FILAS_POR_PAGINA.map((n) => (
+              {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                 <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
               ))}
             </SelectContent>

@@ -33,6 +33,15 @@ import { KpiCard } from '@/components/kpi-card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Table,
   TableBody,
@@ -73,6 +82,7 @@ import {
   type CriticidadObs as Criticidad,
 } from '@/data/observaciones-store'
 import { useProyectos } from '@/data/proyectos-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
 
@@ -147,11 +157,15 @@ export function ObservacionesPage() {
   const [filtroCriticidad, setFiltroCriticidad] = useState('todas')
   const [filtroResponsable, setFiltroResponsable] = useState('todos')
   const [filtroEstado, setFiltroEstado] = useState('todos')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
   const [searchParams, setSearchParams] = useSearchParams()
   const [seleccionId, setSeleccionId] = useState<string | null>(() =>
     searchParams.get('obs'),
   )
+  const [asignarObservacion, setAsignarObservacion] =
+    useState<Observacion | null>(null)
+  const [responsableAsignado, setResponsableAsignado] = useState('')
   const observaciones = useObservaciones()
   const codigosProyecto = useProyectos().map((p) => p.codigo)
   const { puedeEditar } = usePermisos()
@@ -249,39 +263,40 @@ export function ObservacionesPage() {
           </span>
         ),
       },
-      {
-        id: 'acciones',
-        header: 'Acciones',
-        cell: ({ row }) => (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Acciones">
-                <MoreHorizontal className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>{row.original.codigo}</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => setSeleccionId(row.original.id)}>
-                <Eye className="mr-2 h-4 w-4" />
-                Ver detalle
-              </DropdownMenuItem>
-              {puedeEditar && (
-                <DropdownMenuItem
-                  onClick={() =>
-                    toast.info(`Asignar ${row.original.codigo}`, {
-                      description: 'Selecciona un responsable para la observación.',
-                    })
-                  }
-                >
-                  <PlusCircle className="mr-2 h-4 w-4" />
-                  Asignar responsable
-                </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ),
-      },
+{
+  id: 'acciones',
+  header: 'Acciones',
+  cell: ({ row }) => (
+    <div onClick={(e) => e.stopPropagation()}>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label="Acciones">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>{row.original.codigo}</DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setSeleccionId(row.original.id)}>
+            <Eye className="mr-2 h-4 w-4" />
+            Ver detalle
+          </DropdownMenuItem>
+          {puedeEditar && (
+            <DropdownMenuItem
+              onClick={() => {
+                setAsignarObservacion(row.original)
+                setResponsableAsignado(row.original.responsable)
+              }}
+            >
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Asignar responsable
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  ),
+},
     ],
     [puedeEditar],
   )
@@ -322,11 +337,34 @@ export function ObservacionesPage() {
   const pctResuelto = Math.round((kpis.resueltas / Math.max(kpis.total, 1)) * 100)
 
   useEffect(() => {
+    setPaginacion((prev) => ({ ...prev, pageIndex: 0 }))
+  }, [
+    busqueda,
+    filtroProyecto,
+    filtroCriticidad,
+    filtroResponsable,
+    filtroEstado,
+  ])
+
+  useEffect(() => {
     const obs = searchParams.get('obs')
     if (obs) setSeleccionId(obs)
   }, [searchParams])
 
   const seleccionado = observaciones.find((o) => o.id === seleccionId) ?? null
+
+  const confirmarAsignacion = () => {
+    const obs = asignarObservacion
+    if (!obs || !responsableAsignado) return
+    actualizarObservacion(obs.id, {
+      responsable: responsableAsignado,
+      estado: obs.estado === 'nueva' ? 'asignada' : obs.estado,
+    })
+    toast.success('Responsable asignado', {
+      description: `${responsableAsignado} ahora es responsable de ${obs.codigo}.`,
+    })
+    setAsignarObservacion(null)
+  }
 
   const kpiItems: {
     titulo: string
@@ -545,7 +583,7 @@ export function ObservacionesPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FILAS_POR_PAGINA.map((n) => (
+                {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                   <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
                 ))}
               </SelectContent>
@@ -581,6 +619,59 @@ export function ObservacionesPage() {
           }}
         />
       )}
+
+      <Dialog
+        open={asignarObservacion !== null}
+        onOpenChange={(o) => {
+          if (!o) setAsignarObservacion(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Asignar responsable</DialogTitle>
+            <DialogDescription>
+              {asignarObservacion
+                ? `${asignarObservacion.codigo} · ${asignarObservacion.partida}`
+                : 'Selecciona el responsable de la observación.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2">
+            <Label htmlFor="asignar-responsable">Responsable</Label>
+            <Select
+              value={responsableAsignado}
+              onValueChange={setResponsableAsignado}
+            >
+              <SelectTrigger id="asignar-responsable" className="w-full">
+                <SelectValue placeholder="Seleccionar responsable" />
+              </SelectTrigger>
+              <SelectContent>
+                {RESPONSABLES.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setAsignarObservacion(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              disabled={!responsableAsignado}
+              onClick={confirmarAsignacion}
+            >
+              <PlusCircle />
+              Asignar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

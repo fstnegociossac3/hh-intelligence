@@ -20,6 +20,8 @@ import {
   FileClock,
   Siren,
   ArrowUpRight,
+  X,
+  RotateCcw,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
@@ -53,6 +55,11 @@ import {
   coherenciaPromedio,
 } from '@/data/analisis-store'
 import { obtenerEstadoDocumentos } from '@/data/documentos-store'
+import {
+  useAlertasDescartadas,
+  descartarAlerta,
+  restaurarTodasLasAlertas,
+} from '@/data/alertas-store'
 
 type Criticidad = CriticidadObs
 
@@ -62,6 +69,8 @@ interface ActividadReciente {
   proyecto: string
   usuario: string
   fecha: string
+  proyectoId?: string
+  observacionId?: string
 }
 
 interface Alerta {
@@ -183,6 +192,7 @@ export function DashboardPage() {
   const proyectos = useProyectos()
   const observaciones = useObservaciones()
   const analisis = useAnalisis()
+  const alertasDescartadas = useAlertasDescartadas()
 
   const totales = useMemo(() => calcularTotales(analisis), [analisis])
 
@@ -245,6 +255,7 @@ export function DashboardPage() {
         proyecto: p.codigo,
         usuario: p.responsable,
         fecha: p.actualizadoEl,
+        proyectoId: p.id,
       })
     }
     for (const o of observaciones) {
@@ -257,6 +268,8 @@ export function DashboardPage() {
         proyecto: o.proyecto,
         usuario: o.responsable,
         fecha: o.fecha,
+        proyectoId: proyectos.find((p) => p.codigo === o.proyecto)?.id,
+        observacionId: o.id,
       })
     }
     for (const p of proyectos) {
@@ -268,6 +281,7 @@ export function DashboardPage() {
           proyecto: p.codigo,
           usuario: d.responsable,
           fecha: d.fecha,
+          proyectoId: p.id,
         })
       }
     }
@@ -347,9 +361,10 @@ export function DashboardPage() {
     }
 
     return lista
+      .filter((a) => !alertasDescartadas.includes(a.id))
       .sort((a, b) => PRIORIDAD_ORDEN[a.prioridad] - PRIORIDAD_ORDEN[b.prioridad])
       .slice(0, 6)
-  }, [proyectos, observaciones, analisis])
+  }, [proyectos, observaciones, analisis, alertasDescartadas])
 
   const ejecutarAlerta = (alerta: Alerta) => {
     switch (alerta.accion) {
@@ -472,7 +487,8 @@ export function DashboardPage() {
                     return (
                       <tr
                         key={p.id}
-                        className="border-b border-white/5 last:border-0 hover:bg-white/[0.02]"
+                        className="cursor-pointer border-b border-white/5 last:border-0 hover:bg-white/[0.02]"
+                        onClick={() => navigate(`/proyectos/${p.id}`)}
                       >
                         <td className="py-3 pr-4">
                           <p className="max-w-[200px] truncate font-medium">
@@ -518,7 +534,11 @@ export function DashboardPage() {
           >
             <ul className="divide-y divide-white/5">
               {observacionesRecientes.map((o) => (
-                <li key={o.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <li
+                  key={o.id}
+                  className="flex cursor-pointer flex-col gap-1 py-3 hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between"
+                  onClick={() => navigate(`/observaciones?obs=${o.id}`)}
+                >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-xs font-medium text-primary">
@@ -565,32 +585,45 @@ export function DashboardPage() {
               {actividad.map((a) => {
                 const Icono = ACTIVIDAD_ICONO[a.accion] ?? Activity
                 const fecha = parseISO(a.fecha)
+                const irADetalle = () => {
+                  if (a.observacionId) {
+                    navigate(`/observaciones?obs=${a.observacionId}`)
+                  } else if (a.proyectoId) {
+                    navigate(`/proyectos/${a.proyectoId}`)
+                  }
+                }
                 return (
                   <li key={a.id} className="relative">
                     <span className="absolute -left-[27px] flex h-6 w-6 items-center justify-center rounded-full border border-white/10 bg-sidebar text-primary">
                       <Icono className="h-3.5 w-3.5" />
                     </span>
-                    <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 text-sm font-medium">
-                          {a.accion}
-                        </p>
-                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
-                          Proyecto {a.proyecto}
-                        </p>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {a.usuario}
-                        </p>
+                    <button
+                      type="button"
+                      onClick={irADetalle}
+                      className="block w-full text-left"
+                    >
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <p className="flex items-center gap-2 text-sm font-medium">
+                            {a.accion}
+                          </p>
+                          <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                            Proyecto {a.proyecto}
+                          </p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {a.usuario}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-0.5 sm:pl-3">
+                          <span className="whitespace-nowrap text-xs text-muted-foreground">
+                            {format(fecha, 'dd MMM yyyy')}
+                          </span>
+                          <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
+                            {format(fecha, 'HH:mm')}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2 sm:flex-col sm:items-end sm:gap-0.5 sm:pl-3">
-                        <span className="whitespace-nowrap text-xs text-muted-foreground">
-                          {format(fecha, 'dd MMM yyyy')}
-                        </span>
-                        <span className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                          {format(fecha, 'HH:mm')}
-                        </span>
-                      </div>
-                    </div>
+                    </button>
                   </li>
                 )
               })}
@@ -604,7 +637,24 @@ export function DashboardPage() {
             descripcion="Situaciones que requieren atención inmediata."
             icono={Siren}
           >
-            {alertas.length === 0 ? (
+            {alertas.length === 0 && alertasDescartadas.length > 0 ? (
+              <div className="space-y-4">
+                <p className="py-2 text-center text-sm text-muted-foreground">
+                  Todas las alertas fueron descartadas.
+                </p>
+                <div className="flex justify-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 gap-1 px-3"
+                    onClick={restaurarTodasLasAlertas}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Restaurar alertas
+                  </Button>
+                </div>
+              </div>
+            ) : alertas.length === 0 ? (
               <p className="py-6 text-center text-sm text-muted-foreground">
                 No hay alertas activas. Todos los expedientes se encuentran al día.
               </p>
@@ -614,10 +664,10 @@ export function DashboardPage() {
                   <Alert
                     key={alerta.id}
                     variant={alerta.variante}
-                    className="p-4"
+                    className="relative p-4"
                   >
                     <alerta.icono className="h-4 w-4" />
-                    <AlertTitle className="flex flex-wrap items-center gap-2">
+                    <AlertTitle className="flex flex-wrap items-center gap-2 pr-6">
                       {alerta.tipo}
                       <Badge
                         variant="outline"
@@ -631,18 +681,41 @@ export function DashboardPage() {
                         {alerta.proyecto}
                       </p>
                       <p className="mt-0.5 text-sm">{alerta.descripcion}</p>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="mt-2 h-8 gap-1 px-2 text-primary"
-                        onClick={() => ejecutarAlerta(alerta)}
-                      >
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                        {ACCION_BUTTON[alerta.accion]}
-                      </Button>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 gap-1 px-2 text-primary"
+                          onClick={() => ejecutarAlerta(alerta)}
+                        >
+                          <ArrowUpRight className="h-3.5 w-3.5" />
+                          {ACCION_BUTTON[alerta.accion]}
+                        </Button>
+                      </div>
                     </AlertDescription>
+                    <button
+                      type="button"
+                      className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground transition-colors hover:bg-white/10 hover:text-foreground"
+                      onClick={() => descartarAlerta(alerta.id)}
+                      aria-label={`Descartar alerta ${alerta.tipo}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </Alert>
                 ))}
+                {alertasDescartadas.length > 0 && (
+                  <div className="flex justify-end">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 gap-1 px-2 text-muted-foreground"
+                      onClick={restaurarTodasLasAlertas}
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      Restaurar {alertasDescartadas.length} descartada(s)
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </SeccionCard>

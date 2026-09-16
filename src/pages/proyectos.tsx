@@ -1,10 +1,6 @@
-import { useMemo, useState, useCallback, useRef } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import type { ChangeEvent } from 'react'
-import { useForm } from 'react-hook-form'
-import { zodResolver } from '@hookform/resolvers/zod'
-import { format, parseISO, isAfter } from 'date-fns'
 import { useNavigate, Link } from 'react-router-dom'
-import { z } from 'zod'
 import {
   type ColumnDef,
   type Header,
@@ -19,12 +15,8 @@ import {
 import {
   AlertTriangle,
   ArrowDown,
-  ArrowLeft,
-  ArrowRight,
   ArrowUp,
   ArrowUpDown,
-  Building2,
-  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -32,15 +24,14 @@ import {
   Copy,
   Download,
   FolderKanban,
-  Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
   Search,
   Trash2,
   Upload,
-  Users,
   Eye,
+  FileJson,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -48,8 +39,6 @@ import type { Proyecto, ProyectoEstado, TipoObra } from '@/types'
 
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -57,7 +46,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Separator } from '@/components/ui/separator'
 import {
   Table,
   TableBody,
@@ -90,6 +78,7 @@ import { ProyectoEstadoBadge, PROYECTO_ESTADO_LABEL } from '@/components/proyect
 import { usePermisos } from '@/utils/permisos'
 import { EmptyState } from '@/components/empty-state'
 import { FadeIn, Stagger, StaggerItem } from '@/components/ui/motion'
+import { ProyectoForm } from '@/components/proyecto-form'
 
 import {
   useProyectos,
@@ -104,18 +93,22 @@ import {
   obtenerObservaciones,
   guardarObservaciones,
 } from '@/data/observaciones-store'
+import type { Observacion } from '@/data/observaciones-store'
 import {
   leerArchivoJSON,
-  esProyectoValido,
-  esObservacionValida,
+  validarProyectoDetallado,
+  validarObservacionDetallada,
+  descargarPlantillaImportacion,
   exportarProyectosPDF,
 } from '@/utils/export-import'
+import type { ErrorCampoImport } from '@/utils/export-import'
 import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import {
   registrarEvento,
   USUARIO_ACTUAL,
 } from '@/data/historial-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 
 const ESTADOS_DISPONIBLES: ProyectoEstado[] = [
   'borrador',
@@ -135,87 +128,6 @@ const TIPOS_OBRA_DISPONIBLES = [
 ] as const satisfies readonly TipoObra[]
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
-
-const ESTADOS_INICIALES = [
-  'borrador',
-  'documentacion',
-  'en_analisis',
-] as const
-
-const DEPARTAMENTOS = ['Junín', 'Lima', 'Cusco', 'Arequipa', 'Cajamarca']
-
-const PROVINCIAS_POR_DEPARTAMENTO: Record<string, string[]> = {
-  'Junín': ['Huancayo', 'Jauja', 'Concepción', 'Satipo', 'Chanchamayo'],
-  'Lima': ['Lima', 'Huaral', 'Cañete', 'Huarochirí'],
-  'Cusco': ['Cusco', 'Urubamba', 'La Convención', 'Anta'],
-  'Arequipa': ['Arequipa', 'Camaná', 'Islay', 'Caylloma'],
-  'Cajamarca': ['Cajamarca', 'Jaén', 'Chota', 'Celendín'],
-}
-
-const DISTRITOS_POR_PROVINCIA: Record<string, string[]> = {
-  'Huancayo': ['Huancayo', 'Chilca', 'El Tambo', 'Huancán', 'Pilcomayo'],
-  'Jauja': ['Jauja', 'Yauyos', 'Acolla', 'Ataura'],
-  'Concepción': ['Concepción', 'Mito', 'Comas', 'Santa Rosa'],
-  'Satipo': ['Satipo', 'Mazamari', 'Pangoa', 'Llaylla'],
-  'Chanchamayo': ['La Merced', 'Perené', 'Pichanaqui', 'San Ramón'],
-  'Lima': ['Lima', 'Miraflores', 'San Isidro', 'La Molina', 'Surco'],
-  'Huaral': ['Huaral', 'Chancay', 'Aucallama'],
-  'Cañete': ['San Vicente', 'Mala', 'Chilca', 'Asia'],
-  'Huarochirí': ['Matucana', 'Chosica', 'San Bartolomé'],
-  'Cusco': ['Cusco', 'San Sebastián', 'Wanchaq', 'San Jerónimo'],
-  'Urubamba': ['Urubamba', 'Ollantaytambo', 'Yucay'],
-  'La Convención': ['Quillabamba', 'Santa Ana', 'Machupicchu'],
-  'Anta': ['Anta', 'Zurite', 'Chinchaypujio'],
-  'Arequipa': ['Arequipa', 'Cayma', 'Cerro Colorado', 'Alto Selva Alegre'],
-  'Camaná': ['Camaná', 'José María Quimper', 'Mariscal Cáceres'],
-  'Islay': ['Mollendo', 'Mejía', 'Cocachacra'],
-  'Caylloma': ['Cabanaconde', 'Chivay', 'Majes'],
-  'Cajamarca': ['Cajamarca', 'Baños del Inca', 'Llacanora'],
-  'Jaén': ['Jaén', 'Bellavista', 'Las Pirias'],
-  'Chota': ['Chota', 'Choropampa', 'Lajas'],
-  'Celendín': ['Celendín', 'Chumuch', 'Huasmin'],
-}
-
-const ESPECIALISTAS_SUGERIDOS = [
-  'Ing. Estructuras',
-  'Ing. Hidráulica',
-  'Ing. Vial',
-  'Ing. Sanitaria',
-  'Arquitecto',
-  'Ing. Electromecánica',
-]
-
-const nuevoProyectoSchema = z.object({
-  nombre: z
-    .string()
-    .min(5, 'Ingrese el nombre del proyecto (mín. 5 caracteres)'),
-  codigo: z.string().min(3, 'Ingrese el código del expediente'),
-  entidad: z.string().min(3, 'Ingrese la entidad pública'),
-  tipoObra: z.enum(TIPOS_OBRA_DISPONIBLES, {
-    message: 'Seleccione el tipo de obra',
-  }),
-  departamento: z.string().min(1, 'Seleccione el departamento'),
-  provincia: z.string().min(1, 'Seleccione la provincia'),
-  distrito: z.string().min(1, 'Seleccione el distrito'),
-  descripcion: z
-    .string()
-    .min(10, 'Ingrese una descripción (mín. 10 caracteres)'),
-  jefeProyecto: z.string().min(3, 'Ingrese el jefe de proyecto'),
-  especialistas: z.string().min(3, 'Ingrese al menos un especialista'),
-  revisor: z.string().min(3, 'Ingrese el revisor'),
-  fechaInicio: z.string().min(1, 'Seleccione la fecha de inicio'),
-  fechaEntrega: z.string().min(1, 'Seleccione la fecha de entrega'),
-  estadoInicial: z.enum(ESTADOS_INICIALES, {
-    message: 'Seleccione el estado inicial',
-  }),
-})
-
-type NuevoProyectoValues = z.infer<typeof nuevoProyectoSchema>
-
-interface NuevoProyectoFormProps {
-  onGuardar: (proyecto: Proyecto) => void
-  onCerrar: () => void
-}
 
 function AccionesProyecto({
   proyecto,
@@ -309,16 +221,18 @@ export function ProyectosPage() {
   const [dialogAbierto, setDialogAbierto] = useState(false)
   const [dialogEditarAbierto, setDialogEditarAbierto] = useState(false)
   const [dialogEliminarAbierto, setDialogEliminarAbierto] = useState(false)
+  const [erroresImportacion, setErroresImportacion] = useState<
+    { tipo: string; etiqueta: string; errores: ErrorCampoImport[] }[]
+  >([])
+  const [dialogErroresImportAbierto, setDialogErroresImportAbierto] = useState(false)
   const [proyectoEditando, setProyectoEditando] = useState<Proyecto | null>(null)
   const [proyectoEliminarId, setProyectoEliminarId] = useState<string | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstadoRaw] = useState<string>('todos')
   const [filtroTipo, setFiltroTipoRaw] = useState<string>('todos')
-  const [paginacion, setPaginacion] = useState({
-    pageIndex: 0,
-    pageSize: 8,
-  })
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
 
   const colocarProyecto = (proyecto: Proyecto) => {
     crearProyecto(proyecto)
@@ -339,21 +253,15 @@ export function ProyectosPage() {
     setDialogEditarAbierto(true)
   }, [])
 
-  const guardarEdicion = useCallback(() => {
+  const guardarEdicion = useCallback((guardado: Proyecto) => {
     if (!proyectoEditando) return
-    actualizarProyecto(proyectoEditando.id, {
-      nombre: proyectoEditando.nombre,
-      responsable: proyectoEditando.responsable,
-      entidad: proyectoEditando.entidad,
-      estado: proyectoEditando.estado,
-      actualizadoEl: format(new Date(), 'yyyy-MM-dd'),
-    })
+    actualizarProyecto(proyectoEditando.id, { ...guardado })
     registrarEvento({
       proyectoId: proyectoEditando.id,
       proyectoCodigo: proyectoEditando.codigo,
       accion: 'proyecto_editado',
       usuario: USUARIO_ACTUAL,
-      descripcion: `Datos del expediente ${proyectoEditando.codigo} actualizados`,
+      descripcion: `Datos del expediente ${guardado.codigo} actualizados`,
     })
     setDialogEditarAbierto(false)
     setProyectoEditando(null)
@@ -409,16 +317,44 @@ export function ProyectosPage() {
         observaciones?: unknown[]
       }>(file)
 
-      const proyectosValidos = Array.isArray(datos?.proyectos)
-        ? datos.proyectos.filter(esProyectoValido)
-        : []
-      const observacionesValidas = Array.isArray(datos?.observaciones)
-        ? datos.observaciones.filter(esObservacionValida)
-        : []
+      const erroresPorRegistro: { tipo: string; etiqueta: string; errores: ErrorCampoImport[] }[] = []
+
+      const proyectosValidos: Proyecto[] = []
+      const rawProyectos = Array.isArray(datos?.proyectos) ? datos.proyectos : []
+      rawProyectos.forEach((item, i) => {
+        const resultado = validarProyectoDetallado(item)
+        if (resultado.ok) {
+          proyectosValidos.push(item as Proyecto)
+        } else {
+          erroresPorRegistro.push({
+            tipo: 'Proyecto',
+            etiqueta: `Proyecto #${i + 1}`,
+            errores: resultado.errores,
+          })
+        }
+      })
+
+      const observacionesValidas: Observacion[] = []
+      const rawObs = Array.isArray(datos?.observaciones) ? datos.observaciones : []
+      rawObs.forEach((item, i) => {
+        const resultado = validarObservacionDetallada(item)
+        if (resultado.ok) {
+          observacionesValidas.push(item as Observacion)
+        } else {
+          erroresPorRegistro.push({
+            tipo: 'Observación',
+            etiqueta: `Observación #${i + 1}`,
+            errores: resultado.errores,
+          })
+        }
+      })
 
       if (proyectosValidos.length === 0) {
-        toast.error('Archivo no válido', {
-          description: 'El archivo no contiene proyectos con formato reconocido.',
+        toast.error('No se importó ningún proyecto', {
+          description:
+            erroresPorRegistro.length > 0
+              ? `Se encontraron ${erroresPorRegistro.length} registro(s) con errores. Revisa la plantilla de descarga.`
+              : 'El archivo no contiene una estructura de proyectos reconocida.',
         })
         return
       }
@@ -433,14 +369,28 @@ export function ProyectosPage() {
       observacionesValidas.forEach((o) => mapaObs.set(o.id, o))
       guardarObservaciones(Array.from(mapaObs.values()))
 
+      setErroresImportacion(erroresPorRegistro)
+      if (erroresPorRegistro.length > 0) {
+        setDialogErroresImportAbierto(true)
+      }
       toast.success('Importación completada', {
-        description: `${proyectosValidos.length} expediente(s) y ${observacionesValidas.length} observación(es) importados.`,
+        description:
+          erroresPorRegistro.length === 0
+            ? `${proyectosValidos.length} expediente(s) y ${observacionesValidas.length} observación(es) importados.`
+            : `${proyectosValidos.length} expediente(s) y ${observacionesValidas.length} observación(es) importados. ${erroresPorRegistro.length} registro(s) rechazados por errores.`,
       })
     } catch {
       toast.error('No se pudo importar', {
         description: 'El archivo no es un JSON válido.',
       })
     }
+  }
+
+  const descargarPlantilla = () => {
+    descargarPlantillaImportacion()
+    toast.success('Plantilla descargada', {
+      description: 'Archivo JSON de ejemplo con la estructura esperada.',
+    })
   }
 
   const cambiarFiltroEstado = (valor: string) => {
@@ -627,6 +577,12 @@ export function ProyectosPage() {
     table.getFilteredRowModel().rows.length,
   )
 
+  useEffect(() => {
+    if (paginacion.pageIndex >= totalPaginas && totalPaginas > 0) {
+      setPaginacion((prev) => ({ ...prev, pageIndex: totalPaginas - 1 }))
+    }
+  }, [paginacion.pageIndex, totalPaginas])
+
   return (
     <div className="space-y-6">
       <Stagger className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -721,14 +677,24 @@ export function ProyectosPage() {
             </Button>
 
             {puedeEditar && (
-              <Button
-                variant="outline"
-                className="w-full sm:w-auto"
-                onClick={() => inputImportarRef.current?.click()}
-              >
-                <Upload />
-                Importar
-              </Button>
+              <>
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={descargarPlantilla}
+                >
+                  <FileJson />
+                  Plantilla
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={() => inputImportarRef.current?.click()}
+                >
+                  <Upload />
+                  Importar
+                </Button>
+              </>
             )}
 
             <input
@@ -739,6 +705,49 @@ export function ProyectosPage() {
               aria-label="Importar proyectos"
               onChange={manejarImportar}
             />
+
+            <Dialog
+              open={dialogErroresImportAbierto}
+              onOpenChange={setDialogErroresImportAbierto}
+            >
+              <DialogContent className="max-h-[80dvh] max-w-2xl">
+                <DialogHeader>
+                  <DialogTitle>Rechazados en la importación</DialogTitle>
+                  <DialogDescription>
+                    {erroresImportacion.length} registro(s) no se importaron por
+                    errores de validación campo por campo. Los registros válidos
+                    sí se guardaron.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="max-h-[50dvh] space-y-3 overflow-y-auto pr-1">
+                  {erroresImportacion.map((registro, i) => (
+                    <div
+                      key={`${registro.tipo}-${i}`}
+                      className="rounded-lg border border-amber-200 bg-amber-50 p-3"
+                    >
+                      <div className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+                        <AlertTriangle className="h-4 w-4" />
+                        {registro.tipo}: {registro.etiqueta}
+                      </div>
+                      <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-amber-800">
+                        {registro.errores.map((err, j) => (
+                          <li key={`${err.campo}-${j}`}>
+                            <span className="font-medium">{err.campo}:</span>{' '}
+                            {err.detalle}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+                <DialogFooter>
+                  <Button onClick={descargarPlantilla}>
+                    <FileJson />
+                    Descargar plantilla de ejemplo
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             <Dialog open={dialogAbierto} onOpenChange={setDialogAbierto}>
               {puedeEditar && (
@@ -756,7 +765,8 @@ export function ProyectosPage() {
                     Complete el registro del expediente técnico por pasos.
                   </DialogDescription>
                 </DialogHeader>
-                <NuevoProyectoForm
+                <ProyectoForm
+                  modo="crear"
                   onGuardar={colocarProyecto}
                   onCerrar={() => setDialogAbierto(false)}
                 />
@@ -907,7 +917,7 @@ export function ProyectosPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FILAS_POR_PAGINA.map((n) => (
+                {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                   <SelectItem key={n} value={String(n)}>
                     {n} / pág.
                   </SelectItem>
@@ -940,92 +950,22 @@ export function ProyectosPage() {
       </FadeIn>
 
       <Dialog open={dialogEditarAbierto} onOpenChange={setDialogEditarAbierto}>
-        <DialogContent>
+        <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Editar proyecto</DialogTitle>
             <DialogDescription>
-              Actualice los datos principales del expediente.
+              Actualice los datos del expediente técnico por pasos.
             </DialogDescription>
           </DialogHeader>
           {proyectoEditando && (
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label htmlFor="ed-nombre">Nombre del proyecto</Label>
-                <Input
-                  id="ed-nombre"
-                  value={proyectoEditando.nombre}
-                  onChange={(e) =>
-                    setProyectoEditando((prev) =>
-                      prev ? { ...prev, nombre: e.target.value } : null,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ed-responsable">Responsable</Label>
-                <Input
-                  id="ed-responsable"
-                  value={proyectoEditando.responsable}
-                  onChange={(e) =>
-                    setProyectoEditando((prev) =>
-                      prev ? { ...prev, responsable: e.target.value } : null,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="ed-entidad">Entidad pública</Label>
-                <Input
-                  id="ed-entidad"
-                  value={proyectoEditando.entidad}
-                  onChange={(e) =>
-                    setProyectoEditando((prev) =>
-                      prev ? { ...prev, entidad: e.target.value } : null,
-                    )
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Estado</Label>
-                <Select
-                  value={proyectoEditando.estado}
-                  onValueChange={(v) =>
-                    setProyectoEditando((prev) =>
-                      prev ? { ...prev, estado: v as ProyectoEstado } : null,
-                    )
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ESTADOS_DISPONIBLES.map((e) => (
-                      <SelectItem key={e} value={e}>
-                        {PROYECTO_ESTADO_LABEL[e]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+            <ProyectoForm
+              key={proyectoEditando.id}
+              modo="editar"
+              proyecto={proyectoEditando}
+              onGuardar={guardarEdicion}
+              onCerrar={() => setDialogEditarAbierto(false)}
+            />
           )}
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setDialogEditarAbierto(false)}
-            >
-              Cancelar
-            </Button>
-            <Button
-              disabled={
-                !proyectoEditando ||
-                proyectoEditando.nombre.trim().length < 5
-              }
-              onClick={guardarEdicion}
-            >
-              Guardar cambios
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -1066,538 +1006,6 @@ export function ProyectosPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-const PASOS = [
-  { titulo: 'Información general', icono: Building2 },
-  { titulo: 'Equipo', icono: Users },
-  { titulo: 'Programación', icono: ClipboardCheck },
-  { titulo: 'Confirmación', icono: Check },
-]
-
-const CAMPOS_PASO: (keyof NuevoProyectoValues)[][] = [
-  [
-    'nombre',
-    'codigo',
-    'entidad',
-    'tipoObra',
-    'departamento',
-    'provincia',
-    'distrito',
-    'descripcion',
-  ],
-  ['jefeProyecto', 'especialistas', 'revisor'],
-  ['fechaInicio', 'fechaEntrega', 'estadoInicial'],
-]
-
-function NuevoProyectoForm({
-  onGuardar,
-  onCerrar,
-}: NuevoProyectoFormProps) {
-  const [paso, setPaso] = useState(0)
-  const [guardando, setGuardando] = useState(false)
-
-  const {
-    register,
-    handleSubmit,
-    trigger,
-    setValue,
-    getValues,
-    watch,
-    formState: { errors },
-  } = useForm<NuevoProyectoValues>({
-    resolver: zodResolver(nuevoProyectoSchema),
-    defaultValues: {
-      nombre: '',
-      codigo: '',
-      entidad: '',
-      tipoObra: 'Infraestructura',
-      departamento: '',
-      provincia: '',
-      distrito: '',
-      descripcion: '',
-      jefeProyecto: '',
-      especialistas: '',
-      revisor: '',
-      fechaInicio: '',
-      fechaEntrega: '',
-      estadoInicial: 'borrador',
-    },
-  })
-
-  const valores = watch()
-
-  const provincias = DEPARTAMENTOS.includes(valores.departamento)
-    ? PROVINCIAS_POR_DEPARTAMENTO[valores.departamento]
-    : []
-  const distritos = provincias.includes(valores.provincia)
-    ? DISTRITOS_POR_PROVINCIA[valores.provincia]
-    : []
-
-  const esUltimoPaso = paso === PASOS.length - 1
-
-  const siguiente = async () => {
-    const valido = await trigger(CAMPOS_PASO[paso])
-    if (!valido) return
-    setPaso((p) => Math.min(p + 1, PASOS.length - 1))
-  }
-
-  const anterior = () => setPaso((p) => Math.max(p - 1, 0))
-
-  const onSubmit = async (data: NuevoProyectoValues) => {
-    if (guardando) return
-
-    const inicio = parseISO(data.fechaInicio)
-    const entrega = parseISO(data.fechaEntrega)
-    if (isAfter(inicio, entrega)) {
-      toast.error(
-        'La fecha de entrega debe ser posterior a la fecha de inicio',
-      )
-      return
-    }
-
-    setGuardando(true)
-    await new Promise((resolve) => setTimeout(resolve, 700))
-
-    const hoy = new Date()
-    const nuevo: Proyecto = {
-      id: `proy-${Date.now()}`,
-      codigo: data.codigo.trim(),
-      nombre: data.nombre.trim(),
-      entidad: data.entidad.trim(),
-      sector: data.tipoObra,
-      tipoObra: data.tipoObra,
-      responsable: data.jefeProyecto.trim(),
-      avance: 0,
-      observaciones: 0,
-      monto: 0,
-      fechaCreacion: format(hoy, 'yyyy-MM-dd'),
-      fechaInicio: data.fechaInicio,
-      actualizadoEl: format(hoy, 'yyyy-MM-dd'),
-      estado: data.estadoInicial,
-      ubicacion: `${data.departamento}, ${data.provincia}, ${data.distrito}`,
-    }
-
-    onGuardar(nuevo)
-  }
-
-  const textoError = (campo: keyof NuevoProyectoValues) => {
-    const mensaje = errors[campo]?.message
-    return mensaje ? <p className="text-xs text-destructive">{mensaje}</p> : null
-  }
-
-  const agregarEspecialista = (valor: string) => {
-    const actual = getValues('especialistas')
-    const lista = actual
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean)
-    if (lista.includes(valor)) return
-    setValue(
-      'especialistas',
-      lista.length ? `${lista.join(', ')}, ${valor}` : valor,
-      { shouldValidate: true },
-    )
-  }
-
-  return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-6">
-      <ol className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {PASOS.map((p, i) => {
-          const Icono = p.icono
-          const activo = i === paso
-          const completado = i < paso
-          return (
-            <li key={p.titulo}>
-              <div
-                className={cn(
-                  'flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium',
-                  activo
-                    ? 'border-primary bg-primary/10 text-foreground'
-                    : completado
-                      ? 'border-success/40 bg-success/10 text-success'
-                      : 'border-muted text-muted-foreground',
-                )}
-              >
-                <Icono className="h-4 w-4 shrink-0" />
-                <span className="truncate">{p.titulo}</span>
-              </div>
-            </li>
-          )
-        })}
-      </ol>
-
-      <Separator />
-
-      {paso === 0 && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="np-nombre">Nombre del proyecto</Label>
-            <Input
-              id="np-nombre"
-              placeholder="Ej: Mejoramiento del puente vehicular..."
-              {...register('nombre')}
-            />
-            {textoError('nombre')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-codigo">Código</Label>
-            <Input
-              id="np-codigo"
-              placeholder="EXP-2026-0001"
-              {...register('codigo')}
-            />
-            {textoError('codigo')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-entidad">Entidad pública</Label>
-            <Input
-              id="np-entidad"
-              placeholder="Ej: Municipalidad Provincial de..."
-              {...register('entidad')}
-            />
-            {textoError('entidad')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-tipo">Tipo de obra</Label>
-            <Select
-              value={valores.tipoObra}
-              onValueChange={(v) =>
-                setValue('tipoObra', v as TipoObra, { shouldValidate: true })
-              }
-            >
-              <SelectTrigger id="np-tipo">
-                <SelectValue placeholder="Seleccione" />
-              </SelectTrigger>
-              <SelectContent>
-                {TIPOS_OBRA_DISPONIBLES.map((tipo) => (
-                  <SelectItem key={tipo} value={tipo}>
-                    {tipo}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {textoError('tipoObra')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-depto">Departamento</Label>
-            <Select
-              value={valores.departamento}
-              onValueChange={(v) => {
-                setValue('departamento', v, { shouldValidate: true })
-                setValue('provincia', '')
-                setValue('distrito', '')
-              }}
-            >
-              <SelectTrigger id="np-depto">
-                <SelectValue placeholder="Seleccione" />
-              </SelectTrigger>
-              <SelectContent>
-                {DEPARTAMENTOS.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {textoError('departamento')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-prov">Provincia</Label>
-            <Select
-              value={valores.provincia}
-              onValueChange={(v) => {
-                setValue('provincia', v, { shouldValidate: true })
-                setValue('distrito', '')
-              }}
-              disabled={!provincias.length}
-            >
-              <SelectTrigger id="np-prov">
-                <SelectValue placeholder="Seleccione" />
-              </SelectTrigger>
-              <SelectContent>
-                {provincias.map((p) => (
-                  <SelectItem key={p} value={p}>
-                    {p}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {textoError('provincia')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-distrito">Distrito</Label>
-            <Select
-              value={valores.distrito}
-              onValueChange={(v) =>
-                setValue('distrito', v, { shouldValidate: true })
-              }
-              disabled={!distritos.length}
-            >
-              <SelectTrigger id="np-distrito">
-                <SelectValue placeholder="Seleccione" />
-              </SelectTrigger>
-              <SelectContent>
-                {distritos.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {textoError('distrito')}
-          </div>
-
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="np-desc">Descripción</Label>
-            <Textarea
-              id="np-desc"
-              placeholder="Describa el alcance del expediente técnico..."
-              rows={3}
-              {...register('descripcion')}
-            />
-            {textoError('descripcion')}
-          </div>
-        </div>
-      )}
-
-      {paso === 1 && (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="np-jefe">Jefe de proyecto</Label>
-            <Input
-              id="np-jefe"
-              placeholder="Nombre del responsable del proyecto"
-              {...register('jefeProyecto')}
-            />
-            {textoError('jefeProyecto')}
-          </div>
-
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="np-espec">Especialistas</Label>
-            <Input
-              id="np-espec"
-              placeholder="Ej: Ing. Estructuras, Ing. Hidráulica"
-              {...register('especialistas')}
-            />
-            <div className="flex flex-wrap gap-1.5">
-              {ESPECIALISTAS_SUGERIDOS.map((esp) => (
-                <button
-                  key={esp}
-                  type="button"
-                  onClick={() => agregarEspecialista(esp)}
-                  className="rounded-full border bg-muted px-2.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  + {esp.replace('Ing. ', '')}
-                </button>
-              ))}
-            </div>
-            {textoError('especialistas')}
-          </div>
-
-          <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="np-revisor">Revisor</Label>
-            <Input
-              id="np-revisor"
-              placeholder="Nombre del revisor del expediente"
-              {...register('revisor')}
-            />
-            {textoError('revisor')}
-          </div>
-        </div>
-      )}
-
-      {paso === 2 && (
-        <div className="grid gap-4 sm:grid-cols-3">
-          <div className="space-y-2">
-            <Label htmlFor="np-inicio">Fecha de inicio</Label>
-            <Input
-              id="np-inicio"
-              type="date"
-              {...register('fechaInicio')}
-            />
-            {textoError('fechaInicio')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-entrega">Fecha estimada de entrega</Label>
-            <Input
-              id="np-entrega"
-              type="date"
-              {...register('fechaEntrega')}
-            />
-            {textoError('fechaEntrega')}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="np-estado">Estado inicial</Label>
-            <Select
-              value={valores.estadoInicial}
-              onValueChange={(v) =>
-                setValue(
-                  'estadoInicial',
-                  v as (typeof ESTADOS_INICIALES)[number],
-                  { shouldValidate: true },
-                )
-              }
-            >
-              <SelectTrigger id="np-estado">
-                <SelectValue placeholder="Seleccione" />
-              </SelectTrigger>
-              <SelectContent>
-                {ESTADOS_INICIALES.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {PROYECTO_ESTADO_LABEL[e]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {textoError('estadoInicial')}
-          </div>
-        </div>
-      )}
-
-      {paso === 3 && (
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div className="space-y-1">
-            <h4 className="flex items-center gap-2 text-sm font-semibold">
-              <Building2 className="h-4 w-4 text-muted-foreground" />
-              Información general
-            </h4>
-            <dl className="space-y-1.5 text-sm">
-              <FilaResumen etiqueta="Nombre" valor={valores.nombre} />
-              <FilaResumen etiqueta="Código" valor={valores.codigo} />
-              <FilaResumen etiqueta="Entidad" valor={valores.entidad} />
-              <FilaResumen etiqueta="Tipo de obra" valor={valores.tipoObra} />
-              <FilaResumen
-                etiqueta="Ubicación"
-                valor={`${valores.departamento}, ${valores.provincia}, ${valores.distrito}`}
-              />
-              <FilaResumen etiqueta="Descripción" valor={valores.descripcion} />
-            </dl>
-          </div>
-
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <h4 className="flex items-center gap-2 text-sm font-semibold">
-                <Users className="h-4 w-4 text-muted-foreground" />
-                Equipo
-              </h4>
-              <dl className="space-y-1.5 text-sm">
-                <FilaResumen
-                  etiqueta="Jefe de proyecto"
-                  valor={valores.jefeProyecto}
-                />
-                <FilaResumen
-                  etiqueta="Especialistas"
-                  valor={valores.especialistas}
-                />
-                <FilaResumen etiqueta="Revisor" valor={valores.revisor} />
-              </dl>
-            </div>
-
-            <div className="space-y-1">
-              <h4 className="flex items-center gap-2 text-sm font-semibold">
-                <ClipboardCheck className="h-4 w-4 text-muted-foreground" />
-                Programación
-              </h4>
-              <dl className="space-y-1.5 text-sm">
-                <FilaResumen
-                  etiqueta="Inicio"
-                  valor={
-                    valores.fechaInicio
-                      ? format(parseISO(valores.fechaInicio), 'dd/MM/yyyy')
-                      : ''
-                  }
-                />
-                <FilaResumen
-                  etiqueta="Entrega"
-                  valor={
-                    valores.fechaEntrega
-                      ? format(parseISO(valores.fechaEntrega), 'dd/MM/yyyy')
-                      : ''
-                  }
-                />
-                <FilaResumen
-                  etiqueta="Estado inicial"
-                  valor={PROYECTO_ESTADO_LABEL[valores.estadoInicial]}
-                />
-              </dl>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <Separator />
-
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={onCerrar}
-          disabled={guardando}
-        >
-          Cancelar
-        </Button>
-
-        <div className="flex flex-wrap items-center gap-2">
-          {paso > 0 && (
-            <Button
-              type="button"
-              variant="outline"
-              onClick={anterior}
-              disabled={guardando}
-            >
-              <ArrowLeft />
-              Anterior
-            </Button>
-          )}
-
-          {esUltimoPaso ? (
-            <Button type="submit" disabled={guardando}>
-              {guardando ? (
-                <>
-                  <Loader2 className="animate-spin" />
-                  Guardando...
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 />
-                  Guardar proyecto
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button type="button" onClick={siguiente}>
-              Siguiente
-              <ArrowRight />
-            </Button>
-          )}
-        </div>
-      </div>
-    </form>
-  )
-}
-
-function FilaResumen({
-  etiqueta,
-  valor,
-}: {
-  etiqueta: string
-  valor: string
-}) {
-  return (
-    <div className="flex gap-2">
-      <dt className="w-28 shrink-0 text-muted-foreground">{etiqueta}</dt>
-      <dd className="min-w-0 flex-1 break-words font-medium">{valor}</dd>
     </div>
   )
 }

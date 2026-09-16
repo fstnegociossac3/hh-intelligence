@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   type ColumnDef,
   type Header,
@@ -18,6 +18,7 @@ import {
   ChevronRight,
   Eye,
   FolderKanban,
+  Lock,
   Mail,
   MoreHorizontal,
   Pencil,
@@ -25,6 +26,7 @@ import {
   Power,
   Search,
   ShieldCheck,
+  Trash2,
   UserCheck,
   UserCog,
   UserRound,
@@ -66,6 +68,14 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -79,30 +89,20 @@ import { formatFecha } from '@/utils/formatters'
 import { cn } from '@/utils/cn'
 import { ESTADO_OK, ESTADO_WARNING, ESTADO_INFO, ESTADO_NEUTRO, PUNTO_OK, PUNTO_NEUTRO } from '@/utils/estados-clases'
 import { ESPECIALIDADES } from '@/data/proyecto-detalle'
+import {
+  ROL_LABEL,
+  actualizarUsuario,
+  cambiarEstadoUsuario,
+  crearUsuario,
+  eliminarUsuario,
+  useUsuarios,
+  type EstadoUsuario,
+  type RolUsuario as Rol,
+  type UsuarioSistema as UsuarioFila,
+} from '@/data/usuarios-store'
+import { useFilasPorPagina, combinarFilasPorPagina, usePaginacionConfig } from '@/data/configuracion-store'
 
 const FILAS_POR_PAGINA = [8, 10, 15, 20]
-
-type Rol = 'administrador' | 'revisor' | 'analista' | 'consulta'
-type EstadoUsuario = 'activo' | 'inactivo'
-
-interface UsuarioFila {
-  id: string
-  nombres: string
-  apellidos: string
-  correo: string
-  rol: Rol
-  especialidad: string
-  proyectosAsignados: number
-  estado: EstadoUsuario
-  ultimoAcceso: string
-}
-
-const ROL_LABEL: Record<Rol, string> = {
-  administrador: 'Administrador',
-  revisor: 'Revisor',
-  analista: 'Analista',
-  consulta: 'Consulta',
-}
 
 const ROL_BADGE: Record<Rol, string> = {
   administrador: ESTADO_INFO,
@@ -120,21 +120,6 @@ const ESTADO_BADGE: Record<EstadoUsuario, string> = {
   activo: ESTADO_OK,
   inactivo: ESTADO_NEUTRO,
 }
-
-const MOCK_USUARIOS: UsuarioFila[] = [
-  { id: 'u-01', nombres: 'Andrea', apellidos: 'Quispe', correo: 'andrea.quispe@hhi.pe', rol: 'administrador', especialidad: 'Estructuras', proyectosAsignados: 4, estado: 'activo', ultimoAcceso: '2026-08-31T10:15:00' },
-  { id: 'u-02', nombres: 'Carlos', apellidos: 'Mendoza', correo: 'carlos.mendoza@hhi.pe', rol: 'analista', especialidad: 'Costos y Presupuestos', proyectosAsignados: 6, estado: 'activo', ultimoAcceso: '2026-08-31T09:40:00' },
-  { id: 'u-03', nombres: 'Lucía', apellidos: 'Fernández', correo: 'lucia.fernandez@hhi.pe', rol: 'revisor', especialidad: 'Eléctricas', proyectosAsignados: 3, estado: 'activo', ultimoAcceso: '2026-08-30T16:05:00' },
-  { id: 'u-04', nombres: 'Jorge', apellidos: 'Paredes', correo: 'jorge.paredes@hhi.pe', rol: 'analista', especialidad: 'Arquitectura', proyectosAsignados: 2, estado: 'activo', ultimoAcceso: '2026-08-30T11:20:00' },
-  { id: 'u-05', nombres: 'Ana', apellidos: 'Quispe', correo: 'ana.quispe@hhi.pe', rol: 'revisor', especialidad: 'Sanitaria', proyectosAsignados: 3, estado: 'inactivo', ultimoAcceso: '2026-08-12T08:00:00' },
-  { id: 'u-06', nombres: 'Pedro', apellidos: 'Rojas', correo: 'pedro.rojas@hhi.pe', rol: 'administrador', especialidad: 'Geotecnia', proyectosAsignados: 5, estado: 'activo', ultimoAcceso: '2026-08-31T08:30:00' },
-  { id: 'u-07', nombres: 'María', apellidos: 'Torres', correo: 'maria.torres@hhi.pe', rol: 'consulta', especialidad: 'Hidráulica', proyectosAsignados: 0, estado: 'activo', ultimoAcceso: '2026-08-29T14:45:00' },
-  { id: 'u-08', nombres: 'Miguel', apellidos: 'Ortiz', correo: 'miguel.ortiz@hhi.pe', rol: 'analista', especialidad: 'Ambiental', proyectosAsignados: 2, estado: 'inactivo', ultimoAcceso: '2026-08-05T09:10:00' },
-  { id: 'u-09', nombres: 'Rosa', apellidos: 'Gutiérrez', correo: 'rosa.gutierrez@hhi.pe', rol: 'revisor', especialidad: 'Vías y Transporte', proyectosAsignados: 4, estado: 'activo', ultimoAcceso: '2026-08-30T18:00:00' },
-  { id: 'u-10', nombres: 'Luis', apellidos: 'Paredes', correo: 'luis.paredes@hhi.pe', rol: 'consulta', especialidad: 'Estructuras', proyectosAsignados: 1, estado: 'activo', ultimoAcceso: '2026-08-27T12:30:00' },
-  { id: 'u-11', nombres: 'Pedro', apellidos: 'Salazar', correo: 'pedro.salazar@hhi.pe', rol: 'analista', especialidad: 'Arquitectura', proyectosAsignados: 1, estado: 'activo', ultimoAcceso: '2026-08-28T15:50:00' },
-  { id: 'u-12', nombres: 'Jorge', apellidos: 'Rojas', correo: 'jorge.rojas@hhi.pe', rol: 'administrador', especialidad: 'Geotecnia', proyectosAsignados: 2, estado: 'inactivo', ultimoAcceso: '2026-07-29T10:00:00' },
-]
 
 const ROLES_DISPONIBLES: Rol[] = ['administrador', 'revisor', 'analista', 'consulta']
 
@@ -176,6 +161,10 @@ const usuarioSchema = z.object({
   estado: z.enum(['activo', 'inactivo'], {
     required_error: 'Seleccione un estado',
   }),
+  password: z.union([
+    z.literal(''),
+    z.string().min(6, 'La contraseña debe tener al menos 6 caracteres'),
+  ]),
 })
 
 type UsuarioFormValues = z.infer<typeof usuarioSchema>
@@ -185,8 +174,13 @@ export function UsuariosPage() {
   const [busqueda, setBusqueda] = useState('')
   const [filtroRol, setFiltroRol] = useState('todos')
   const [filtroEstado, setFiltroEstado] = useState('todos')
-  const [paginacion, setPaginacion] = useState({ pageIndex: 0, pageSize: 10 })
-  const [usuarios, setUsuarios] = useState<UsuarioFila[]>(MOCK_USUARIOS)
+  const filasConfig = useFilasPorPagina()
+  const [paginacion, setPaginacion] = usePaginacionConfig()
+  const usuarios = useUsuarios()
+  const [usuarioVisto, setUsuarioVisto] = useState<UsuarioFila | null>(null)
+  const [usuarioEliminar, setUsuarioEliminar] = useState<UsuarioFila | null>(
+    null,
+  )
   const [drawer, setDrawer] = useState<{
     modo: 'crear' | 'editar'
     usuario: UsuarioFila | null
@@ -199,6 +193,32 @@ export function UsuariosPage() {
       return true
     })
   }, [filtroRol, filtroEstado, usuarios])
+
+  useEffect(() => {
+    setPaginacion((prev) => ({ ...prev, pageIndex: 0 }))
+  }, [busqueda, filtroRol, filtroEstado])
+
+  const verUsuario = useCallback((u: UsuarioFila) => {
+    setUsuarioVisto(u)
+  }, [])
+
+  const editarUsuario = useCallback((u: UsuarioFila) => {
+    setDrawer({ modo: 'editar', usuario: u })
+  }, [])
+
+  const toggleEstado = useCallback(
+    (id: string) => {
+      const target = usuarios.find((u) => u.id === id)
+      if (!target) return
+      const nuevoEstado: EstadoUsuario =
+        target.estado === 'activo' ? 'inactivo' : 'activo'
+      cambiarEstadoUsuario(id, nuevoEstado)
+      toast.success(
+        `${target.nombres} ${target.apellidos} ahora está ${ESTADO_LABEL[nuevoEstado].toLowerCase()}`,
+      )
+    },
+    [usuarios],
+  )
 
   const columnas = useMemo<ColumnDef<UsuarioFila>[]>(
     () => [
@@ -325,12 +345,20 @@ export function UsuariosPage() {
                 <Power className="mr-2 h-4 w-4" />
                 {row.original.estado === 'activo' ? 'Desactivar' : 'Activar'}
               </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => setUsuarioEliminar(row.original)}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Eliminar
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         ),
       },
     ],
-    [],
+    [verUsuario, editarUsuario, toggleEstado],
   )
 
   const table = useReactTable({
@@ -378,34 +406,17 @@ export function UsuariosPage() {
     { titulo: 'Administradores', valor: kpis.administradores, detalle: 'Con permisos totales', icono: ShieldCheck, tono: 'info' },
   ]
 
-  const verUsuario = (u: UsuarioFila) => {
-    toast.info('Ver usuario', {
-      description: `${u.nombres} ${u.apellidos} · ${ROL_LABEL[u.rol]} · ${u.correo}.`,
-    })
-  }
-
-  const editarUsuario = (u: UsuarioFila) => {
-    setDrawer({ modo: 'editar', usuario: u })
-  }
-
-  const crearUsuario = () => {
+  const abrirCrearUsuario = () => {
     setDrawer({ modo: 'crear', usuario: null })
   }
 
-  const toggleEstado = (id: string) => {
-    setUsuarios((prev) => {
-      const target = prev.find((u) => u.id === id)
-      const nuevoEstado: EstadoUsuario =
-        target?.estado === 'activo' ? 'inactivo' : 'activo'
-      toast.success(
-        target
-          ? `${target.nombres} ${target.apellidos} ahora está ${ESTADO_LABEL[nuevoEstado].toLowerCase()}`
-          : 'Estado actualizado',
-      )
-      return prev.map((u) =>
-        u.id === id ? { ...u, estado: nuevoEstado } : u,
-      )
+  const confirmarEliminarUsuario = () => {
+    if (!usuarioEliminar) return
+    eliminarUsuario(usuarioEliminar.id)
+    toast.success('Usuario eliminado', {
+      description: `${usuarioEliminar.nombres} ${usuarioEliminar.apellidos} fue eliminado.`,
     })
+    setUsuarioEliminar(null)
   }
 
   return (
@@ -429,7 +440,7 @@ export function UsuariosPage() {
           <UserCog className="h-5 w-5 text-primary" />
           Gestión de usuarios
         </h2>
-        <Button onClick={crearUsuario} className="gap-1.5">
+        <Button onClick={abrirCrearUsuario} className="gap-1.5">
           <Plus className="h-4 w-4" />
           Nuevo usuario
         </Button>
@@ -582,6 +593,15 @@ export function UsuariosPage() {
                         <Power className="h-3.5 w-3.5" />
                         {u.estado === 'activo' ? 'Desactivar' : 'Activar'}
                       </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-destructive"
+                        onClick={() => setUsuarioEliminar(u)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        Eliminar
+                      </Button>
                     </div>
                   </div>
                 )
@@ -613,7 +633,7 @@ export function UsuariosPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {FILAS_POR_PAGINA.map((n) => (
+                {combinarFilasPorPagina(FILAS_POR_PAGINA, filasConfig).map((n) => (
                   <SelectItem key={n} value={String(n)}>{n} / pág.</SelectItem>
                 ))}
               </SelectContent>
@@ -633,6 +653,134 @@ export function UsuariosPage() {
 
       <RolesPermisos />
 
+      <Dialog
+        open={usuarioVisto !== null}
+        onOpenChange={(o) => {
+          if (!o) setUsuarioVisto(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          {usuarioVisto && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    {usuarioVisto.nombres.charAt(0)}
+                    {usuarioVisto.apellidos.charAt(0)}
+                  </div>
+                  <span className="min-w-0 truncate">
+                    {usuarioVisto.nombres} {usuarioVisto.apellidos}
+                  </span>
+                </DialogTitle>
+                <DialogDescription>
+                  Detalles de la cuenta de usuario.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <p className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-muted-foreground">
+                    <Mail className="h-3.5 w-3.5" />
+                    Correo
+                  </p>
+                  <p className="break-words text-sm font-medium">
+                    {usuarioVisto.correo}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Rol
+                  </p>
+                  <Badge
+                    variant="outline"
+                    className={ROL_BADGE[usuarioVisto.rol]}
+                  >
+                    {ROL_LABEL[usuarioVisto.rol]}
+                  </Badge>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Especialidad
+                  </p>
+                  <p className="text-sm font-medium">
+                    {usuarioVisto.especialidad}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Proyectos asignados
+                  </p>
+                  <p className="inline-flex items-center gap-1.5 text-sm font-medium">
+                    <FolderKanban className="h-4 w-4 text-muted-foreground" />
+                    {usuarioVisto.proyectosAsignados}
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Estado
+                  </p>
+                  <Badge
+                    variant="outline"
+                    className={ESTADO_BADGE[usuarioVisto.estado]}
+                  >
+                    <span
+                      className={cn(
+                        'h-1.5 w-1.5 rounded-full',
+                        usuarioVisto.estado === 'activo'
+                          ? PUNTO_OK
+                          : PUNTO_NEUTRO,
+                      )}
+                    />
+                    {ESTADO_LABEL[usuarioVisto.estado]}
+                  </Badge>
+                </div>
+                <div className="space-y-1.5">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Último acceso
+                  </p>
+                  <p className="text-sm font-medium">
+                    {formatFecha(usuarioVisto.ultimoAcceso.slice(0, 10))}
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={usuarioEliminar !== null}
+        onOpenChange={(o) => {
+          if (!o) setUsuarioEliminar(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Eliminar usuario</DialogTitle>
+            <DialogDescription>
+              {usuarioEliminar
+                ? `¿Eliminar a ${usuarioEliminar.nombres} ${usuarioEliminar.apellidos}? Esta acción no se puede deshacer.`
+                : 'Confirmación de eliminación.'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => setUsuarioEliminar(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={confirmarEliminarUsuario}
+            >
+              <Trash2 className="mr-2 h-4 w-4" />
+              Eliminar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {drawer && (
         <UsuarioFormDrawer
           key={drawer.modo === 'crear' ? 'crear' : drawer.usuario!.id}
@@ -643,23 +791,36 @@ export function UsuariosPage() {
             if (!abierto) setDrawer(null)
           }}
           onGuardar={(valores) => {
+            const correoNormalizado = valores.correo.trim().toLowerCase()
+            const correoExistente = usuarios.some(
+              (u) =>
+                u.correo.toLowerCase() === correoNormalizado &&
+                u.id !== (drawer.usuario?.id ?? ''),
+            )
+            if (correoExistente) {
+              toast.error('Correo en uso', {
+                description: 'Ya existe una cuenta con ese correo.',
+              })
+              return
+            }
             if (drawer.modo === 'crear') {
-              const nuevo: UsuarioFila = {
-                id: `u-${Date.now()}`,
-                proyectosAsignados: 0,
-                ultimoAcceso: '2026-08-31T00:00:00',
-                ...valores,
+              if (!valores.password) {
+                toast.error('Ingrese una contraseña', {
+                  description:
+                    'La contraseña debe tener al menos 6 caracteres.',
+                })
+                return
               }
-              setUsuarios((prev) => [nuevo, ...prev])
+              crearUsuario({ ...valores })
               toast.success('Usuario creado', {
                 description: `${valores.nombres} ${valores.apellidos}.`,
               })
             } else {
-              setUsuarios((prev) =>
-                prev.map((u) =>
-                  u.id === drawer.usuario!.id ? { ...u, ...valores } : u,
-                ),
-              )
+              const { password, ...resto } = valores
+              actualizarUsuario(drawer.usuario!.id, {
+                ...resto,
+                ...(password ? { password } : {}),
+              })
               toast.success('Usuario actualizado', {
                 description: `${valores.nombres} ${valores.apellidos}.`,
               })
@@ -685,6 +846,8 @@ function UsuarioFormDrawer({
   onOpenChange: (o: boolean) => void
   onGuardar: (valores: UsuarioFormValues) => void
 }) {
+  const esEdicion = modo === 'editar'
+
   const {
     register,
     handleSubmit,
@@ -701,6 +864,7 @@ function UsuarioFormDrawer({
           rol: usuario.rol,
           especialidad: usuario.especialidad,
           estado: usuario.estado,
+          password: '',
         }
       : {
           nombres: '',
@@ -709,10 +873,9 @@ function UsuarioFormDrawer({
           rol: 'analista',
           especialidad: '',
           estado: 'activo',
+          password: '',
         },
   })
-
-  const esEdicion = modo === 'editar'
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -784,6 +947,34 @@ function UsuarioFormDrawer({
             />
             {errors.correo && (
               <p className="text-xs text-destructive">{errors.correo.message}</p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="us-password">Contraseña</Label>
+            <div className="relative">
+              <Lock className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                id="us-password"
+                type="password"
+                placeholder={
+                  esEdicion
+                    ? 'Dejar en blanco para conservarla'
+                    : 'Mínimo 6 caracteres'
+                }
+                className={cn(
+                  'pl-9',
+                  errors.password && 'border-destructive',
+                )}
+                aria-invalid={!!errors.password}
+                autoComplete="new-password"
+                {...register('password')}
+              />
+            </div>
+            {errors.password && (
+              <p className="text-xs text-destructive">
+                {errors.password.message}
+              </p>
             )}
           </div>
 
