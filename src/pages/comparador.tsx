@@ -710,7 +710,7 @@ export function ComparadorPage() {
               />
             ) : (
               <>
-              <div className="overflow-hidden rounded-lg border">
+              <div className="overflow-x-auto rounded-lg border">
                 <Table>
                   <TableHeader>
                     {table.getHeaderGroups().map((hg) => (
